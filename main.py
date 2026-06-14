@@ -12,6 +12,7 @@ from typing import Optional, List
 from pathlib import Path
 from math import ceil, floor
 from scipy.stats import entropy
+from dashboard_standardisation import standardise_date_series
 
 app = FastAPI(title="Biodiversity Dashboard", version="1.0.0")
 
@@ -52,7 +53,7 @@ def get_dataframe() -> pd.DataFrame:
                 _df = _df.rename(columns={"Taxa": "taxa"})
             
             if "Date" in _df.columns:
-                _df["Date"] = pd.to_datetime(_df["Date"])
+                _df["Date"] = standardise_date_series(_df["Date"])
                 _df["month"] = _df["Date"].dt.month
             
             
