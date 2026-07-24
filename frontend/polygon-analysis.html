@@ -1,0 +1,2363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biodiversity Polygon Comparison Tool</title>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --secondary-color: #6c757d;
+            --light-gray: #f8f9fa;
+            --border-color: #dee2e6;
+            --card-shadow: 0 4px 8px rgba(0,0,0,0.05);
+            --error-color: #dc3545;
+            --success-color: #2e7d32;
+            --warning-color: #f59f00;
+            --danger-color: #c92a2a;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 1.5em;
+            color: #333;
+            background-color: #f4f7f6;
+        }
+
+        h1, h2 {
+            color: #212529;
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 0.3em;
+            margin-top: 1.5em;
+            margin-bottom: 0.75em;
+        }
+
+        h1:first-child { margin-top: 0; }
+
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1em;
+            margin-bottom: 1em;
+        }
+
+        .button-link, button {
+            background-color: var(--primary-color);
+            color: #fff;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 0.95em;
+        }
+
+        .button-link.secondary, button.secondary {
+            background-color: var(--secondary-color);
+        }
+
+        .intro-card, .card {
+            background-color: #fff;
+            padding: 1.25em 1.5em;
+            border-radius: 8px;
+            box-shadow: var(--card-shadow);
+            margin-bottom: 1.25em;
+        }
+
+        .intro-card p { margin: 0.4em 0; line-height: 1.45; }
+
+        .controls {
+            display: flex;
+            gap: 1em;
+            flex-wrap: wrap;
+            align-items: end;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 0.3em;
+            font-weight: 700;
+            font-size: 0.9em;
+        }
+
+        .control-group select {
+            padding: 8px;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            min-width: 160px;
+        }
+
+        .control-group.map-options-group {
+            flex: 1 1 780px;
+            min-width: 0;
+        }
+
+        .map-layer-options {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.45em 1.25em;
+        }
+
+        .map-layer-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.55em;
+            min-height: 32px;
+            cursor: pointer;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .map-layer-toggle input {
+            width: 20px;
+            height: 20px;
+            margin: 0;
+            accent-color: var(--primary-color);
+            cursor: pointer;
+        }
+
+        .map-layer-option {
+            display: flex;
+            align-items: center;
+            gap: 0.4em;
+        }
+
+        .map-layer-info {
+            position: relative;
+            flex: 0 0 auto;
+            width: 24px;
+            height: 24px;
+            padding: 0;
+            border: 1px solid #6c757d;
+            border-radius: 50%;
+            background: #fff;
+            color: #343a40;
+            font: 700 14px/1 Arial, sans-serif;
+            cursor: help;
+        }
+
+        .map-layer-info::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            z-index: 1000;
+            left: 50%;
+            bottom: calc(100% + 9px);
+            width: min(310px, 75vw);
+            padding: 10px 12px;
+            border-radius: 4px;
+            background: #212529;
+            color: #fff;
+            font: 400 13px/1.4 Arial, sans-serif;
+            text-align: left;
+            white-space: normal;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transform: translateX(-50%);
+        }
+
+        .map-layer-info:hover::after,
+        .map-layer-info:focus-visible::after,
+        .map-layer-info.is-open::after {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .hotspot-keys {
+            display: none;
+            flex-wrap: wrap;
+            gap: 8px 18px;
+            width: 100%;
+        }
+
+        .hotspot-keys.has-visible-key { display: flex; }
+
+        .hotspot-key {
+            display: none;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 8px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            background: #fff;
+            font-size: 0.9em;
+        }
+
+        .hotspot-key.is-visible { display: inline-flex; }
+        .hotspot-key-title { font-weight: 700; margin-right: 2px; }
+        .hotspot-key-item { display: inline-flex; align-items: center; gap: 4px; }
+
+        .hotspot-swatch {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(0, 0, 0, 0.55);
+            border-radius: 2px;
+        }
+
+        #map-container {
+            height: 680px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: #e9ecef;
+        }
+
+        .map-frame {
+            position: relative;
+        }
+
+        .preview-status {
+            position: absolute;
+            z-index: 1000;
+            right: 12px;
+            bottom: 12px;
+            max-width: calc(100% - 24px);
+            padding: 8px 10px;
+            border: 1px solid rgba(0, 0, 0, 0.35);
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.94);
+            color: #212529;
+            font-size: 0.88em;
+            font-weight: 700;
+            line-height: 1.3;
+            pointer-events: none;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .observation-cluster {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 46px;
+            height: 46px;
+            border-radius: 50%;
+            border: 4px solid rgba(255, 255, 255, 0.55);
+            box-sizing: border-box;
+            color: #1f2933;
+            font-weight: 700;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+        }
+        .observation-cluster span {
+            display: block;
+            white-space: nowrap;
+            font-size: var(--cluster-font-size, 11px);
+            line-height: 1;
+            font-variant-numeric: tabular-nums;
+        }
+        .observation-cluster-small { background: rgba(110, 204, 57, 0.88); }
+        .observation-cluster-medium { background: rgba(240, 194, 12, 0.88); }
+        .observation-cluster-large { background: rgba(241, 128, 23, 0.9); }
+
+        .layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 360px;
+            gap: 1.25em;
+        }
+
+        .side-panel {
+            align-self: start;
+            position: sticky;
+            top: 1em;
+        }
+
+        .metric-grid {
+            display: grid;
+            gap: 0.65em;
+        }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 1em;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.45em;
+        }
+
+        .metric-row span:first-child { color: #555; }
+        .metric-row b { text-align: right; }
+
+        .metric-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .metric-info {
+            width: 21px;
+            height: 21px;
+            font-size: 12px;
+        }
+
+        .metric-info::after {
+            left: 0;
+            transform: none;
+        }
+
+        .result-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.65em;
+            margin-top: 0.85em;
+        }
+
+        .result-actions button {
+            width: 100%;
+            min-height: 44px;
+            font-weight: 700;
+        }
+
+        .download-action {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .download-action #download-comparison-results {
+            flex: 1 1 auto;
+        }
+
+        .download-action .map-layer-info {
+            flex: 0 0 24px;
+            width: 24px;
+            min-height: 24px;
+        }
+
+        .rank-details {
+            border: 1px solid #b8c9dc;
+            border-radius: 6px;
+            background: #f5f9fd;
+        }
+
+        .rank-details summary {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75em;
+            padding: 0.8em;
+            cursor: pointer;
+            font-weight: 700;
+            list-style: none;
+        }
+
+        .rank-details summary::-webkit-details-marker { display: none; }
+        .rank-details summary::after {
+            content: "▾";
+            color: var(--primary-color);
+            font-size: 1.1em;
+        }
+
+        .rank-details[open] summary::after { transform: rotate(180deg); }
+
+        .rank-summary {
+            margin-left: auto;
+            color: #315f8c;
+            font-size: 0.88em;
+            text-align: right;
+        }
+
+        .rank-content {
+            border-top: 1px solid #b8c9dc;
+            padding: 0.8em;
+        }
+
+        .rank-help {
+            margin: 0 0 0.8em;
+            color: #4b5563;
+            font-size: 0.88em;
+            line-height: 1.45;
+        }
+
+        .rank-content .metric-row:last-of-type {
+            border-bottom: 0;
+        }
+
+        .comparison-method {
+            margin-top: 0.8em;
+            padding-top: 0.7em;
+            border-top: 1px solid var(--border-color);
+            color: #4b5563;
+            font-size: 0.84em;
+            line-height: 1.45;
+        }
+
+        .concern-label {
+            display: inline-block;
+            padding: 0.25em 0.55em;
+            border-radius: 5px;
+            color: #fff;
+            font-weight: 700;
+        }
+
+        .concern-low { background: var(--success-color); }
+        .concern-moderate { background: var(--warning-color); }
+        .concern-high { background: var(--danger-color); }
+        .concern-insufficient { background: var(--secondary-color); }
+
+        .note {
+            background: var(--light-gray);
+            padding: 0.75em;
+            border-radius: 6px;
+            margin-top: 0.85em;
+            line-height: 1.4;
+        }
+
+        .progress-box {
+            background: #eef6ff;
+            border: 1px solid #cfe2ff;
+            padding: 0.75em;
+            border-radius: 6px;
+            margin-top: 0.85em;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: #dbeafe;
+            border-radius: 999px;
+            overflow: hidden;
+            margin-top: 0.55em;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--primary-color);
+            transition: width 0.2s ease;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+            max-height: 360px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            margin-top: 0.85em;
+        }
+
+        .result-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 2000;
+            display: grid;
+            place-items: center;
+            padding: 3vh 3vw;
+            background: rgba(20, 25, 30, 0.68);
+        }
+
+        .result-modal.hidden { display: none; }
+
+        .result-modal-content {
+            width: min(1100px, 94vw);
+            max-height: 90vh;
+            overflow: hidden;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.3);
+        }
+
+        .result-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1em;
+            padding: 1em 1.25em;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .result-modal-header h2 { margin: 0; }
+
+        .result-modal-close {
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            font-size: 1.5em;
+            line-height: 1;
+        }
+
+        .result-modal .table-wrapper {
+            max-height: calc(90vh - 84px);
+            margin: 0;
+            border: 0;
+            border-radius: 0;
+        }
+
+        body.result-modal-open { overflow: hidden; }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 0.9em;
+        }
+
+        th, td {
+            border-bottom: 1px solid var(--border-color);
+            padding: 8px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            background: var(--light-gray);
+            position: sticky;
+            top: 0;
+        }
+
+        .hidden { display: none; }
+        .error { color: var(--error-color); font-weight: 700; }
+
+        @media (max-width: 1000px) {
+            .layout { grid-template-columns: 1fr; }
+            .side-panel { position: static; }
+            #map-container { height: 560px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <h1>Biodiversity Polygon Comparison Tool</h1>
+        <a href="index.html" class="button-link secondary">Back to Main Dashboard</a>
+    </div>
+
+    <div class="intro-card">
+        <p><b>How to use this page:</b> draw a polygon on the map to calculate biodiversity summaries for that area.</p>
+        <p>The tool compares the drawn polygon with habitat-stratified random polygons of the same shape and size across the mapped University Estate. This helps show whether the selected area ranks high or low for biodiversity value and survey effort compared with similar-sized areas.</p>
+        <p><b>Biodiversity Index:</b> unique species divided by total observation records. This helps adjust for variable survey effort.</p>
+    </div>
+
+    <div class="card controls">
+        <div class="control-group">
+            <label for="habitat-year-filter">Habitat Year</label>
+            <select id="habitat-year-filter">
+                <option value="2024-25" selected>2024-25</option>
+                <option value="2023-24">2023-24</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label for="comparison-count">Random Comparisons</label>
+            <select id="comparison-count">
+                <option value="50">50 - quickest</option>
+                <option value="100">100 - quick</option>
+                <option value="250" selected>250 - recommended</option>
+                <option value="500">500 - detailed</option>
+                <option value="1000">1,000 - research comparison</option>
+            </select>
+        </div>
+        <div class="control-group map-options-group">
+            <label>Map Layers</label>
+            <div class="map-layer-options">
+                <span class="map-layer-option">
+                    <label class="map-layer-toggle" for="record-layer-toggle">
+                        <input type="checkbox" id="record-layer-toggle" checked>
+                        <span>Observation markers</span>
+                    </label>
+                    <button
+                        type="button"
+                        class="map-layer-info"
+                        aria-label="Explain observation markers"
+                        aria-expanded="false"
+                        data-tooltip="Numbers show the total observation records represented. At overview scales, display markers may be placed at grid-cell centres and are not exact observation locations. Polygon calculations always use the exact recorded coordinates."
+                    >i</button>
+                </span>
+                <span class="map-layer-option">
+                    <label class="map-layer-toggle" for="biodiversity-hotspot-toggle">
+                        <input type="checkbox" id="biodiversity-hotspot-toggle">
+                        <span>Biodiversity Index grid</span>
+                    </label>
+                    <button
+                        type="button"
+                        class="map-layer-info"
+                        aria-label="Explain the Biodiversity Index grid"
+                        aria-expanded="false"
+                        data-tooltip="Compares unique species per observation record between estate grid cells. Red cells rank highest, amber cells are intermediate, green cells rank lower, and grey cells do not have enough observations for classification."
+                    >i</button>
+                </span>
+                <span class="map-layer-option">
+                    <label class="map-layer-toggle" for="effort-hotspot-toggle">
+                        <input type="checkbox" id="effort-hotspot-toggle">
+                        <span>Observation effort grid</span>
+                    </label>
+                    <button
+                        type="button"
+                        class="map-layer-info"
+                        aria-label="Explain the observation effort grid"
+                        aria-expanded="false"
+                        data-tooltip="Shows where observation records are concentrated. Darker blue cells have more records relative to other estate cells. Pale cells may be under-surveyed and do not necessarily have low biodiversity."
+                    >i</button>
+                </span>
+            </div>
+        </div>
+        <button type="button" id="clear-polygons" class="secondary">Clear Polygons</button>
+        <div class="hotspot-keys" aria-live="polite">
+            <div id="biodiversity-hotspot-key" class="hotspot-key">
+                <span class="hotspot-key-title">Biodiversity Index:</span>
+                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#7a7a7a"></span>Not enough observations</span>
+                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#1b9e77"></span>Lower</span>
+                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#ffb000"></span>Moderate</span>
+                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#d73027"></span>High</span>
+            </div>
+            <div id="effort-hotspot-key" class="hotspot-key">
+                <span class="hotspot-key-title">Observation effort:</span>
+                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#c9efff"></span>Lower</span>
+                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#168aad"></span>Moderate</span>
+                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#081d58"></span>High</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="layout">
+        <div class="card" style="padding: 0;">
+            <div class="map-frame">
+                <div id="map-container"></div>
+                <div id="preview-status" class="preview-status hidden" aria-live="polite"></div>
+            </div>
+        </div>
+
+        <div class="card side-panel">
+            <h2 style="margin-top: 0;">Polygon Results</h2>
+            <div id="results-empty">
+                Draw a polygon on the map to calculate biodiversity summaries and comparison rankings.
+            </div>
+
+            <div id="results-loading" class="hidden">
+                <b>Calculating polygon summary...</b>
+                <div class="progress-box">
+                    <span id="progress-text">Starting random polygon comparison...</span>
+                    <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+                </div>
+            </div>
+
+            <div id="results-content" class="hidden">
+                <div class="metric-grid" id="metric-grid"></div>
+                <div class="note" id="concern-note"></div>
+                <div class="result-actions">
+                    <button type="button" id="show-species-table">View Polygon Species List</button>
+                    <button type="button" id="show-records-table" class="secondary">View Polygon Records</button>
+                    <div class="download-action">
+                        <button type="button" id="download-comparison-results" class="secondary">Download All Comparison Statistics (CSV)</button>
+                        <button
+                            type="button"
+                            class="map-layer-info"
+                            aria-label="Explain the comparison statistics CSV"
+                            aria-expanded="false"
+                            data-tooltip="The CSV contains the focal polygon and every accepted random comparison polygon. It reports each value, ascending rank, rank total and percentile. Biodiversity Index, species and taxa ranks use the same sufficiently surveyed comparison areas as the page; effort ranks use all accepted comparisons."
+                        >i</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="results-error" class="hidden error"></div>
+        </div>
+    </div>
+
+    <div id="result-table-modal" class="result-modal hidden" role="dialog" aria-modal="true" aria-labelledby="result-table-title">
+        <div class="result-modal-content">
+            <div class="result-modal-header">
+                <h2 id="result-table-title">Polygon records</h2>
+                <button type="button" id="close-result-table" class="secondary result-modal-close" aria-label="Close table">&times;</button>
+            </div>
+            <div class="table-wrapper" id="result-table-wrapper">
+                <table id="result-table">
+                    <thead></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+<script>
+$(document).ready(function() {
+    // Use the local URL while testing. Change this back to the Render URL before public deployment.
+    // Use the local API while testing and the deployed API everywhere else.
+    const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '']);
+    const API_BASE_URL = LOCAL_HOSTS.has(window.location.hostname)
+        ? "http://127.0.0.1:8000"
+        : "https://biodiversity-dashboard-icck.onrender.com";
+
+    const RANDOM_POLYGON_BATCH_SIZE = 5;
+    const POINT_CHECK_BATCH_SIZE = 2000;
+    const MIN_RECORDS_FOR_CONCERN = 5;
+    const MIN_SURVEY_DAYS_FOR_CONCERN = 2;
+
+    let map;
+    let drawnItems;
+    let randomPolygonPreviewLayer;
+    let randomPolygonCanvasRenderer;
+    let recordMarkerLayer;
+    let habitatLayer;
+    let habitatGeoJson = null;
+    let habitatFeatureBboxes = [];
+    let habitatEstateBoundary = null;
+    let estateBoundaryGeoJson = null;
+    let habitatStrata = [];
+    let hotspotData = { biodiversity: null, effort: null };
+    let hotspotLayers = { biodiversity: null, effort: null };
+    let hotspotFeatureBboxes = { biodiversity: [], effort: [] };
+    let hotspotDataReady = Promise.resolve();
+    let currentMapData = [];
+    let currentPointCache = [];
+    const GRID_SIZE = 0.001;
+    let pointGrid = new Map();
+    let polygonWorker = null;
+    let polygonWorkerReady = Promise.resolve(false);
+    let polygonWorkerReadyResolver = null;
+    let polygonWorkerRequests = new Map();
+    let nextWorkerRequestId = 0;
+    let analysisSequence = 0;
+    let restoreRecordLayerAfterDrawing = false;
+
+    function gridCoordinate(value) {
+        return Math.floor(value / GRID_SIZE);
+    }
+
+    function gridKey(x, y) {
+        return `${x}:${y}`;
+    }
+    let activePolygonSummary = null;
+
+    initializePage();
+
+    function initializePage() {
+        initializeMap();
+        bindEvents();
+        setLoadingState("Loading map data...");
+        hotspotDataReady = loadHotspotData();
+
+        $.when(loadHabitatLayer(), loadEstateBoundary(), loadMapData())
+            .done(() => {
+                initializePolygonWorker();
+                setEmptyState();
+            })
+            .fail(() => setErrorState("Could not load the map data. Check that the API server is running and the data files exist."));
+    }
+
+    function bindEvents() {
+        $('#habitat-year-filter').on('change', () => {
+            clearPolygons();
+            loadHabitatLayer();
+        });
+        $('#clear-polygons').on('click', clearPolygons);
+        $('#record-layer-toggle').on('change', event => {
+            setRecordLayerVisibility(event.target.checked);
+        });
+        $('#biodiversity-hotspot-toggle').on('change', event => {
+            setHotspotLayerVisibility('biodiversity', event.target.checked);
+        });
+        $('#effort-hotspot-toggle').on('change', event => {
+            setHotspotLayerVisibility('effort', event.target.checked);
+        });
+        $(document).on('click', '.map-layer-info', function(event) {
+            const shouldOpen = !$(this).hasClass('is-open');
+            closeMapLayerInformation();
+            $(this)
+                .toggleClass('is-open', shouldOpen)
+                .attr('aria-expanded', String(shouldOpen));
+        });
+        $(document).on('click', event => {
+            if (!$(event.target).closest('.map-layer-info').length) {
+                closeMapLayerInformation();
+            }
+        });
+        $('#show-species-table').on('click', showSpeciesTable);
+        $('#show-records-table').on('click', showRecordsTable);
+        $('#download-comparison-results').on('click', downloadComparisonResults);
+        $('#close-result-table').on('click', closeResultTable);
+        $('#result-table-modal').on('click', event => {
+            if (event.target.id === 'result-table-modal') closeResultTable();
+        });
+        $(document).on('keydown', event => {
+            if (event.key === 'Escape') {
+                closeResultTable();
+                closeMapLayerInformation();
+            }
+        });
+    }
+
+    function closeMapLayerInformation() {
+        $('.map-layer-info')
+            .removeClass('is-open')
+            .attr('aria-expanded', 'false');
+    }
+
+    function initializeMap() {
+        map = L.map('map-container', {
+            scrollWheelZoom: true,
+            zoomControl: true,
+            preferCanvas: true
+        }).setView([56.340, -2.796], 13);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        map.createPane('habitatPane');
+        map.getPane('habitatPane').style.zIndex = 390;
+        map.createPane('hotspotPane');
+        map.getPane('hotspotPane').style.zIndex = 395;
+        map.createPane('recordPane');
+        map.getPane('recordPane').style.zIndex = 400;
+        map.createPane('previewPane');
+        map.getPane('previewPane').style.zIndex = 410;
+        map.createPane('drawPane');
+        map.getPane('drawPane').style.zIndex = 430;
+
+        drawnItems = new L.FeatureGroup();
+        randomPolygonCanvasRenderer = L.canvas({ padding: 0.5, pane: 'previewPane' });
+        randomPolygonPreviewLayer = L.layerGroup().addTo(map);
+        map.addLayer(drawnItems);
+
+        const drawControl = new L.Control.Draw({
+            draw: {
+                polygon: { shapeOptions: { color: '#111827', weight: 4, fillOpacity: 0.35 } },
+                rectangle: { shapeOptions: { color: '#111827', weight: 4, fillOpacity: 0.35 } },
+                polyline: false,
+                circle: false,
+                marker: false,
+                circlemarker: false
+            },
+            edit: false
+        });
+        map.addControl(drawControl);
+
+        map.on(L.Draw.Event.DRAWSTART, () => {
+            restoreRecordLayerAfterDrawing = Boolean(
+                recordMarkerLayer && map.hasLayer(recordMarkerLayer)
+            );
+            if (restoreRecordLayerAfterDrawing) {
+                map.removeLayer(recordMarkerLayer);
+            }
+        });
+
+        map.on(L.Draw.Event.DRAWSTOP, () => {
+            if (!restoreRecordLayerAfterDrawing) return;
+            restoreRecordLayerAfterDrawing = false;
+            requestAnimationFrame(() => {
+                if ($('#record-layer-toggle').prop('checked') && recordMarkerLayer) {
+                    recordMarkerLayer.addTo(map);
+                }
+            });
+        });
+
+        map.on(L.Draw.Event.CREATED, event => {
+            cancelPolygonWorkerAnalysis();
+            drawnItems.clearLayers();
+            randomPolygonPreviewLayer.clearLayers();
+            const layer = event.layer;
+            drawnItems.addLayer(layer);
+            prepareFocalPolygonLayer(layer);
+            calculateAndShowPolygonSummary(layer);
+        });
+
+        map.on(L.Draw.Event.DELETED, clearPolygons);
+    }
+
+    function loadHabitatLayer() {
+        const selectedYear = $('#habitat-year-filter').val();
+        if (habitatLayer) {
+            map.removeLayer(habitatLayer);
+            habitatLayer = null;
+        }
+
+        return $.get(`${API_BASE_URL}/api/habitat_polygons`, { year: selectedYear }).done(data => {
+            habitatGeoJson = data;
+            habitatFeatureBboxes = (data.features || []).map(feature => ({
+                feature,
+                bbox: turf.bbox(feature)
+            }));
+            habitatStrata = buildHabitatStrata(data.features || []);
+
+            habitatLayer = L.geoJSON(data, {
+                pane: 'habitatPane',
+                style: feature => ({
+                    color: getHabitatColor(feature.properties?.broad || 'Unknown'),
+                    fillColor: getHabitatColor(feature.properties?.broad || 'Unknown'),
+                    weight: 1,
+                    opacity: 0.65,
+                    fillOpacity: 0.25
+                }),
+                interactive: false
+            }).addTo(map);
+
+            if (habitatLayer.getBounds().isValid()) {
+                map.fitBounds(habitatLayer.getBounds(), { padding: [20, 20] });
+            }
+
+            if (polygonWorker) {
+                polygonWorker.postMessage({
+                    type: 'update-habitat',
+                    habitatGeoJson,
+                    estateBoundaryGeoJson
+                });
+            }
+        });
+    }
+
+    function loadEstateBoundary() {
+        return $.get(`${API_BASE_URL}/api/estate-boundary`).done(data => {
+            estateBoundaryGeoJson = data;
+            habitatEstateBoundary = data?.features?.[0] || null;
+        });
+    }
+
+    async function loadMapData() {
+        const [analysisResponse, markerResponse] = await Promise.all([
+            fetch(`${API_BASE_URL}/api/polygon-analysis-data`),
+            fetch(`${API_BASE_URL}/api/map_data`)
+        ]);
+        if (!analysisResponse.ok || !markerResponse.ok) {
+            throw new Error('Could not load observation data for the polygon map.');
+        }
+
+        const [analysisData, markerData] = await Promise.all([
+            analysisResponse.json(),
+            markerResponse.json()
+        ]);
+        currentMapData = (analysisData || []).map(row => ({
+            english_name: row[0],
+            species: row[1],
+            obs: row[2],
+            Date: row[3],
+            taxa: row[4],
+            latitude: row[5],
+            longitude: row[6]
+        }));
+        buildPointCache(currentMapData);
+        buildRecordMapLayer(markerData || []);
+    }
+
+    function createObservationClusterIcon(cluster) {
+        const recordTotal = cluster.getAllChildMarkers().reduce(
+            (total, marker) => total + Math.max(1, Number(marker.options.recordCount) || 1),
+            0
+        );
+        const sizeClass = recordTotal < 100
+            ? 'small'
+            : recordTotal < 1000
+                ? 'medium'
+                : 'large';
+        const exactTotal = recordTotal.toLocaleString();
+        const iconDiameter = exactTotal.length >= 7
+            ? 72
+            : exactTotal.length >= 6
+                ? 64
+                : exactTotal.length >= 5
+                    ? 54
+                    : 46;
+        const fontSize = exactTotal.length >= 7 ? 10 : 11;
+
+        return L.divIcon({
+            className: `observation-cluster observation-cluster-${sizeClass}`,
+            iconSize: L.point(iconDiameter, iconDiameter),
+            html: `<span style="--cluster-font-size: ${fontSize}px" title="${exactTotal} observation records">${exactTotal}</span>`
+        });
+    }
+
+    function observationClusterRadius(zoom) {
+        if (zoom <= 13) return 130;
+        if (zoom <= 15) return 110;
+        if (zoom <= 17) return 85;
+        return 65;
+    }
+
+    function buildRecordMapLayer(data) {
+        if (recordMarkerLayer) map.removeLayer(recordMarkerLayer);
+
+        recordMarkerLayer = L.markerClusterGroup({
+            clusterPane: 'recordPane',
+            chunkedLoading: true,
+            iconCreateFunction: createObservationClusterIcon,
+            maxClusterRadius: observationClusterRadius,
+            disableClusteringAtZoom: 19,
+            showCoverageOnHover: false,
+            spiderfyOnMaxZoom: true,
+            zoomToBoundsOnClick: true
+        });
+
+        (data || []).forEach(point => {
+            const latitude = Number(point.latitude);
+            const longitude = Number(point.longitude);
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+            const taxa = point.taxa || 'Unknown';
+            const recordCount = Math.max(1, Number(point.record_count) || 1);
+            const isAggregate = point.is_aggregate === true;
+            const marker = L.circleMarker([latitude, longitude], {
+                radius: isAggregate
+                    ? Math.min(15, 7 + Math.log2(recordCount))
+                    : 8,
+                fillColor: stringToColor(taxa),
+                color: '#000',
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 0.8,
+                pane: 'recordPane',
+                recordCount
+            });
+
+            marker.bindPopup(isAggregate
+                ? `<b>${recordCount.toLocaleString()} observation records</b><br>` +
+                    `${Number(point.unique_species || 0).toLocaleString()} unique species<br>` +
+                    `<b>Taxa:</b> ${escapeHtml(taxa)}<br>` +
+                    `<small>This overview marker represents a generalised grid area rather than an exact observation location.</small>`
+                : `<b>${escapeHtml(point.english_name || 'N/A')}</b><br>` +
+                    `<i>${escapeHtml(point.species || 'N/A')}</i><br><hr>` +
+                    `<b>Observer:</b> ${escapeHtml(point.obs || 'N/A')}<br>` +
+                    `<b>Date:</b> ${formatDateForDisplay(point.Date) || 'N/A'}<br>` +
+                    `<b>Taxa:</b> ${escapeHtml(taxa)}`
+            );
+            recordMarkerLayer.addLayer(marker);
+        });
+
+        setRecordLayerVisibility($('#record-layer-toggle').prop('checked'));
+    }
+
+    function setRecordLayerVisibility(shouldShow) {
+        if (!recordMarkerLayer) return;
+        if (shouldShow && !map.hasLayer(recordMarkerLayer)) {
+            recordMarkerLayer.addTo(map);
+        } else if (!shouldShow && map.hasLayer(recordMarkerLayer)) {
+            map.removeLayer(recordMarkerLayer);
+        }
+    }
+
+    async function loadHotspotData() {
+        const metrics = ['biodiversity', 'effort'];
+        await Promise.all(metrics.map(async metric => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/hotspots/${metric}`);
+                if (!response.ok) return;
+                const data = await response.json();
+                hotspotData[metric] = data;
+                hotspotFeatureBboxes[metric] = (data.features || []).map(feature => ({
+                    feature,
+                    bbox: turf.bbox(feature)
+                }));
+                hotspotLayers[metric] = L.geoJSON(data, {
+                    pane: 'hotspotPane',
+                    style: feature => getHotspotStyle(feature, metric),
+                    onEachFeature: (feature, layer) => {
+                        layer.bindPopup(buildHotspotPopup(feature));
+                    }
+                });
+                setHotspotLayerVisibility(
+                    metric,
+                    $(`#${metric === 'biodiversity' ? 'biodiversity' : 'effort'}-hotspot-toggle`).prop('checked')
+                );
+            } catch (error) {
+                console.warn(`${metric} hotspot data is unavailable.`, error);
+            }
+        }));
+    }
+
+    function setHotspotLayerVisibility(metric, shouldShow) {
+        const layer = hotspotLayers[metric];
+        const key = metric === 'biodiversity'
+            ? $('#biodiversity-hotspot-key')
+            : $('#effort-hotspot-key');
+
+        key.toggleClass('is-visible', Boolean(shouldShow && layer));
+        $('.hotspot-keys').toggleClass(
+            'has-visible-key',
+            $('.hotspot-key.is-visible').length > 0
+        );
+        if (!layer) return;
+        if (shouldShow && !map.hasLayer(layer)) {
+            layer.addTo(map);
+        } else if (!shouldShow && map.hasLayer(layer)) {
+            map.removeLayer(layer);
+        }
+    }
+
+    function getHotspotStyle(feature, metric) {
+        const properties = feature.properties || {};
+        if (metric === 'biodiversity') {
+            const colors = {
+                insufficient_data: '#7a7a7a',
+                lower: '#1b9e77',
+                moderate: '#ffb000',
+                high: '#d73027'
+            };
+            return {
+                color: '#343a40',
+                weight: 1,
+                fillColor: colors[properties.biodiversity_category] || '#6c757d',
+                fillOpacity: 0.58
+            };
+        }
+
+        const percentile = Number(properties.effort_percentile) || 0;
+        return {
+            color: percentile >= 75 ? '#020817' : '#15546a',
+            weight: 1,
+            fillColor: percentile >= 75 ? '#081d58' : percentile >= 40 ? '#168aad' : '#c9efff',
+            fillOpacity: 0.62
+        };
+    }
+
+    function buildHotspotPopup(feature) {
+        const value = feature.properties || {};
+        const biodiversityIndex = Number.isFinite(Number(value.biodiversity_index))
+            ? Number(value.biodiversity_index).toFixed(3)
+            : 'N/A';
+        return `
+            <b>Analysis grid cell</b><br>
+            Biodiversity Index: ${biodiversityIndex}<br>
+            Biodiversity ranking: ${formatHotspotPercentile(value.biodiversity_percentile)}<br>
+            Observation records: ${Number(value.records || 0).toLocaleString()}<br>
+            Effort ranking: ${formatHotspotPercentile(value.effort_percentile)}<br>
+            Unique species: ${Number(value.unique_species || 0).toLocaleString()}<br>
+            Survey days: ${Number(value.survey_days || 0).toLocaleString()}
+        `;
+    }
+
+    function formatHotspotPercentile(value) {
+        const number = Number(value);
+        return Number.isFinite(number) ? `Higher than ${number.toFixed(0)}% of cells` : 'N/A';
+    }
+
+    function buildPointCache(points) {
+        currentPointCache = (points || [])
+            .filter(point => point.latitude != null && point.longitude != null)
+            .map(point => ({
+                source: point,
+                lng: Number(point.longitude),
+                lat: Number(point.latitude),
+                turfPoint: turf.point([Number(point.longitude), Number(point.latitude)])
+            }))
+            .filter(item => Number.isFinite(item.lng) && Number.isFinite(item.lat));
+        pointGrid = new Map();
+
+        currentPointCache.forEach(item => {
+            const key = gridKey(
+                gridCoordinate(item.lng),
+                gridCoordinate(item.lat)
+            );
+
+            if (!pointGrid.has(key)) pointGrid.set(key, []);
+            pointGrid.get(key).push(item);
+        });
+    }
+
+    function getCandidatesFromGrid(bbox) {
+        const candidates = [];
+
+        const minX = gridCoordinate(bbox[0]);
+        const maxX = gridCoordinate(bbox[2]);
+        const minY = gridCoordinate(bbox[1]);
+        const maxY = gridCoordinate(bbox[3]);
+
+        for (let x = minX; x <= maxX; x++) {
+            for (let y = minY; y <= maxY; y++) {
+                candidates.push(...(pointGrid.get(gridKey(x, y)) || []));
+            }
+        }
+
+        return candidates;
+    }
+
+    function initializePolygonWorker() {
+        if (!window.Worker) {
+            polygonWorkerReady = Promise.resolve(false);
+            return;
+        }
+
+        polygonWorkerReady = new Promise(resolve => {
+            polygonWorkerReadyResolver = resolve;
+        });
+
+        try {
+            polygonWorker = new Worker('polygon-analysis-worker.js');
+            polygonWorker.onmessage = handlePolygonWorkerMessage;
+            polygonWorker.onerror = error => disablePolygonWorker(error);
+            polygonWorker.postMessage({
+                type: 'initialize',
+                points: currentMapData.map(point => ({
+                    longitude: point.longitude,
+                    latitude: point.latitude,
+                    species: point.species,
+                    taxa: point.taxa,
+                    obs: point.obs,
+                    Date: point.Date
+                })),
+                habitatGeoJson,
+                estateBoundaryGeoJson
+            });
+
+            setTimeout(() => {
+                if (polygonWorkerReadyResolver) {
+                    disablePolygonWorker(new Error('Polygon worker startup timed out.'));
+                }
+            }, 60000);
+        } catch (error) {
+            disablePolygonWorker(error);
+        }
+    }
+
+    function handlePolygonWorkerMessage(event) {
+        const message = event.data || {};
+        if (message.type === 'ready') {
+            console.info(`Polygon analysis worker ready with ${Number(message.pointCount).toLocaleString()} indexed records.`);
+            if (polygonWorkerReadyResolver) polygonWorkerReadyResolver(true);
+            polygonWorkerReadyResolver = null;
+            return;
+        }
+
+        if (message.type === 'progress') {
+            updateProgress(
+                message.completed,
+                message.total,
+                `Analysed ${Number(message.completed).toLocaleString()} of ${Number(message.total).toLocaleString()} random polygons...`
+            );
+            return;
+        }
+
+        const pending = polygonWorkerRequests.get(message.requestId);
+        if (!pending) return;
+
+        if (message.type === 'result') {
+            polygonWorkerRequests.delete(message.requestId);
+            drawRandomPolygons(
+                message.comparisonFeatures || [],
+                Number(message.comparison?.samples) || 0
+            );
+            pending.resolve({
+                comparison: message.comparison,
+                focalStats: message.focalStats,
+                focalPointIndexes: message.focalPointIndexes || []
+            });
+        } else if (message.type === 'error') {
+            polygonWorkerRequests.delete(message.requestId);
+            pending.reject(new Error(message.message || 'Polygon worker failed.'));
+        }
+    }
+
+    function disablePolygonWorker(error) {
+        console.warn('Polygon Web Worker unavailable; using browser-thread fallback.', error);
+        if (polygonWorker) polygonWorker.terminate();
+        polygonWorker = null;
+
+        if (polygonWorkerReadyResolver) polygonWorkerReadyResolver(false);
+        polygonWorkerReadyResolver = null;
+
+        polygonWorkerRequests.forEach(request => request.reject(error));
+        polygonWorkerRequests.clear();
+    }
+
+    function cancelPolygonWorkerAnalysis() {
+        analysisSequence += 1;
+        if (polygonWorker) polygonWorker.postMessage({ type: 'cancel' });
+        const cancellation = new Error('Polygon analysis cancelled.');
+        polygonWorkerRequests.forEach(request => request.reject(cancellation));
+        polygonWorkerRequests.clear();
+    }
+
+    async function calculateAndShowPolygonSummary(layer) {
+        const analysisId = ++analysisSequence;
+        try {
+            setLoadingState("Calculating focal polygon summary...");
+            await waitForBrowser();
+            if (analysisId !== analysisSequence) return;
+
+            const polygon = leafletLayerToTurfPolygon(layer);
+            updateProgress(0, getRandomPolygonCount(), "Starting random polygon comparison...");
+            const analysisPromise = comparePolygonWithRandomLocations(polygon);
+            await hotspotDataReady;
+            const analysis = await analysisPromise;
+            if (analysisId !== analysisSequence) return;
+
+            const summary = getPolygonSelectionSummary(analysis);
+            const focalCentroid = turf.centroid(polygon).geometry.coordinates;
+            summary.focalCentroid = {
+                longitude: focalCentroid[0],
+                latitude: focalCentroid[1]
+            };
+            await waitForBrowser();
+            if (analysisId !== analysisSequence) return;
+            summary.hotspotOverlap = await calculateHotspotOverlap(polygon);
+            if (analysisId !== analysisSequence) return;
+            summary.concern = classifyBiodiversityConcern(summary);
+
+            activePolygonSummary = summary;
+            updateFocalPolygonStyle(layer, summary.concern);
+            renderSummary(summary);
+            keepLayerVisible(layer);
+        } catch (error) {
+            if (analysisId !== analysisSequence) return;
+            console.error(error);
+            setErrorState("Could not calculate the polygon summary. Try drawing a smaller or simpler polygon.");
+        }
+    }
+
+    function leafletLayerToTurfPolygon(layer) {
+        const latLngs = layer.getLatLngs()[0];
+        const ring = latLngs.map(latlng => [latlng.lng, latlng.lat]);
+
+        if (ring.length > 0) {
+            const first = ring[0];
+            const last = ring[ring.length - 1];
+            if (first[0] !== last[0] || first[1] !== last[1]) {
+                ring.push([...first]);
+            }
+        }
+
+        return turf.polygon([ring]);
+    }
+
+    function getPolygonSelectionSummary(analysis) {
+        const pointsInPolygon = analysis.focalPoints || (analysis.focalPointIndexes || [])
+            .map(index => currentMapData[index])
+            .filter(Boolean);
+        const focalStats = analysis.focalStats || calculatePolygonStatsFromPoints(pointsInPolygon);
+
+        return {
+            ...focalStats,
+            randomComparison: analysis.comparison || {
+                samples: 0,
+                indexPercentile: null,
+                recordsPercentile: null
+            },
+            hotspotOverlap: null,
+            concern: null,
+            pointsInPolygon,
+            speciesRows: buildSpeciesSummaryRows(pointsInPolygon)
+        };
+    }
+
+    async function comparePolygonWithRandomLocations(polygon) {
+        const workerAvailable = await polygonWorkerReady;
+        if (!workerAvailable || !polygonWorker) {
+            return comparePolygonOnMainThread(polygon);
+        }
+
+        try {
+            return await comparePolygonInWorker(polygon);
+        } catch (error) {
+            console.warn('Worker calculation failed; retrying on the browser thread.', error);
+            return comparePolygonOnMainThread(polygon);
+        }
+    }
+
+    function comparePolygonInWorker(polygon) {
+        return new Promise((resolve, reject) => {
+            const requestId = ++nextWorkerRequestId;
+            const targetCount = getRandomPolygonCount();
+            polygonWorkerRequests.set(requestId, { resolve, reject });
+            polygonWorker.postMessage({
+                type: 'analyse',
+                requestId,
+                polygon,
+                targetCount,
+                seed: createComparisonSeed(polygon, targetCount)
+            });
+        });
+    }
+
+    async function comparePolygonOnMainThread(polygon) {
+        const targetCount = getRandomPolygonCount();
+        await waitForBrowser();
+        updateProgress(0, targetCount, "Checking records inside the selected area...");
+        const focalPoints = await getPointsInPolygonAsync(polygon);
+        const focalStats = calculatePolygonStatsFromPoints(focalPoints);
+        const estateBounds = getRandomPlacementBounds();
+        const randomStats = [];
+        const comparisonFeatures = [];
+        const strataCounts = {};
+        const seed = createComparisonSeed(polygon, targetCount);
+        const random = mulberry32(seed);
+        const stratumPlan = buildStratumPlan(targetCount, random);
+
+        if (!estateBounds || currentPointCache.length === 0) {
+            return {
+                focalPoints,
+                focalStats,
+                comparison: {
+                    samples: 0,
+                    seed,
+                    method: 'No comparison locations available',
+                    strataCounts,
+                    results: [],
+                    indexPercentile: null,
+                    recordsPercentile: null
+                }
+            };
+        }
+
+        const centroidCoords = turf.centroid(polygon).geometry.coordinates;
+        let attempts = 0;
+        let currentStratumFailures = 0;
+        const maxAttempts = targetCount * 100;
+
+        while (randomStats.length < targetCount && attempts < maxAttempts) {
+            for (let i = 0; i < RANDOM_POLYGON_BATCH_SIZE && randomStats.length < targetCount && attempts < maxAttempts; i++) {
+                attempts += 1;
+                const plannedStratum = currentStratumFailures < 60
+                    ? stratumPlan[randomStats.length]
+                    : null;
+                const target = currentStratumFailures < 60
+                    ? samplePlacementTarget(plannedStratum, estateBounds, random)
+                    : sampleEstateWideTarget(estateBounds, random);
+                if (!target) {
+                    currentStratumFailures += 1;
+                    continue;
+                }
+                const orientedPolygon = turf.transformRotate(
+                    polygon,
+                    random() * 360,
+                    { pivot: centroidCoords }
+                );
+                const placementAnchor = randomPointWithinFeature(
+                    orientedPolygon,
+                    turf.bbox(orientedPolygon),
+                    random
+                ) || turf.centroid(orientedPolygon).geometry.coordinates;
+                const movedPolygon = turf.transformTranslate(
+                    orientedPolygon,
+                    turf.distance(placementAnchor, target.coordinates, { units: 'kilometers' }),
+                    turf.bearing(placementAnchor, target.coordinates),
+                    { units: 'kilometers' }
+                );
+
+                if (!polygonOverlapsMappedEstate(movedPolygon)) {
+                    currentStratumFailures += 1;
+                    continue;
+                }
+
+                const acceptedStratum = target.stratum || 'Estate-wide fallback';
+                const comparisonCentroid = turf.centroid(movedPolygon).geometry.coordinates;
+                randomStats.push({
+                    comparisonNumber: randomStats.length + 1,
+                    habitatStratum: acceptedStratum,
+                    centroidLongitude: comparisonCentroid[0],
+                    centroidLatitude: comparisonCentroid[1],
+                    ...calculatePolygonStats(movedPolygon)
+                });
+                strataCounts[acceptedStratum] = (strataCounts[acceptedStratum] || 0) + 1;
+                currentStratumFailures = 0;
+                comparisonFeatures.push(movedPolygon);
+            }
+
+            updateProgress(randomStats.length, targetCount, `Analysed ${randomStats.length.toLocaleString()} of ${targetCount.toLocaleString()} random polygons...`);
+            await waitForBrowser();
+        }
+
+        drawRandomPolygons(comparisonFeatures, randomStats.length);
+
+        const biodiversityStats = randomStats.filter(stats =>
+            stats.totalRecords >= MIN_RECORDS_FOR_CONCERN &&
+            stats.surveyDays >= MIN_SURVEY_DAYS_FOR_CONCERN
+        );
+
+        return {
+            focalPoints,
+            focalStats,
+            comparison: {
+                samples: randomStats.length,
+                seed,
+                method: habitatStrata.length
+                    ? 'Habitat-stratified, area-weighted anchor placement with random orientation and estate overlap'
+                    : 'Estate-wide random placement with random orientation',
+                strataCounts,
+                results: randomStats,
+                biodiversitySamples: biodiversityStats.length,
+                indexPercentile: calculatePercentileRank(
+                    focalStats.biodiversityIndex,
+                    biodiversityStats.map(x => x.biodiversityIndex)
+                ),
+                recordsPercentile: calculatePercentileRank(
+                    focalStats.totalRecords,
+                    randomStats.map(x => x.totalRecords)
+                ),
+                speciesPercentile: calculatePercentileRank(
+                    focalStats.uniqueSpecies,
+                    biodiversityStats.map(x => x.uniqueSpecies)
+                ),
+                taxaPercentile: calculatePercentileRank(
+                    focalStats.taxaGroups,
+                    biodiversityStats.map(x => x.taxaGroups)
+                ),
+                surveyDaysPercentile: calculatePercentileRank(
+                    focalStats.surveyDays,
+                    randomStats.map(x => x.surveyDays)
+                ),
+                observersPercentile: calculatePercentileRank(
+                    focalStats.observers,
+                    randomStats.map(x => x.observers)
+                )
+            }
+        };
+    }
+
+    function calculatePolygonStats(polygon) {
+        return calculatePolygonStatsFromPoints(getPointsInPolygon(polygon));
+    }
+
+    function calculatePolygonStatsFromPoints(points) {
+
+        return {
+            totalRecords: points.length,
+            uniqueSpecies: new Set(points.map(p => p.species).filter(Boolean)).size,
+            taxaGroups: new Set(points.map(p => p.taxa).filter(Boolean)).size,
+            surveyDays: new Set(
+                points.map(p => formatDateForDisplay(p.Date)).filter(Boolean)
+            ).size,
+            observers: new Set(points.map(p => p.obs).filter(Boolean)).size,
+            biodiversityIndex: calculateBiodiversityIndex(
+                new Set(points.map(p => p.species).filter(Boolean)).size,
+                points.length
+            )
+        };
+    }
+
+    function getPointsInPolygon(polygon) {
+        const bbox = turf.bbox(polygon);
+
+        return getCandidatesFromGrid(bbox)
+            .filter(item =>
+                item.lng >= bbox[0] &&
+                item.lng <= bbox[2] &&
+                item.lat >= bbox[1] &&
+                item.lat <= bbox[3]
+            )
+            .filter(item => turf.booleanPointInPolygon(item.turfPoint, polygon))
+            .map(item => item.source);
+    }
+
+    async function getPointsInPolygonAsync(polygon) {
+        const bbox = turf.bbox(polygon);
+        const candidates = getCandidatesFromGrid(bbox).filter(item =>
+            item.lng >= bbox[0] &&
+            item.lng <= bbox[2] &&
+            item.lat >= bbox[1] &&
+            item.lat <= bbox[3]
+        );
+        const selected = [];
+
+        for (let start = 0; start < candidates.length; start += POINT_CHECK_BATCH_SIZE) {
+            const end = Math.min(start + POINT_CHECK_BATCH_SIZE, candidates.length);
+            for (let index = start; index < end; index += 1) {
+                const item = candidates[index];
+                if (turf.booleanPointInPolygon(item.turfPoint, polygon)) {
+                    selected.push(item.source);
+                }
+            }
+            await waitForBrowser();
+        }
+
+        return selected;
+    }
+
+    function calculateBiodiversityIndex(uniqueSpecies, totalRecords) {
+        if (!totalRecords) return null;
+        return uniqueSpecies / totalRecords;
+    }
+
+    function classifyBiodiversityConcern(summary) {
+        const comparison = summary.randomComparison;
+        const indexRank = comparison.indexPercentile;
+        const speciesRank = comparison.speciesPercentile;
+
+        if (
+            summary.totalRecords < MIN_RECORDS_FOR_CONCERN ||
+            summary.surveyDays < MIN_SURVEY_DAYS_FOR_CONCERN
+        ) {
+            return {
+                label: 'Insufficient observation data',
+                className: 'concern-insufficient',
+                color: '#6c757d',
+                score: null,
+                note: `This area needs at least ${MIN_RECORDS_FOR_CONCERN} records across ${MIN_SURVEY_DAYS_FOR_CONCERN} survey days before biodiversity concern can be interpreted reliably.`
+            };
+        }
+
+        if (
+            comparison.samples < 1 ||
+            indexRank == null ||
+            speciesRank == null
+        ) {
+            return {
+                label: 'Comparison unavailable',
+                className: 'concern-insufficient',
+                color: '#6c757d',
+                score: null,
+                note: 'The selected area contains sufficient observation data, but no valid biodiversity ranking could be calculated from the random comparison areas. The focal-area statistics above are still valid.'
+            };
+        }
+
+        const score = (indexRank + speciesRank) / 2;
+        const bothSignalsStrong = indexRank >= 60 && speciesRank >= 60;
+
+        if (score >= 75 && bothSignalsStrong) {
+            return {
+                label: 'High',
+                className: 'concern-high',
+                color: '#c92a2a',
+                score,
+                note: 'Both species richness and the effort-adjusted Biodiversity Index rank strongly against sufficiently surveyed comparison areas.'
+            };
+        }
+
+        if (score >= 40) {
+            return {
+                label: 'Moderate',
+                className: 'concern-moderate',
+                color: '#f59f00',
+                score,
+                note: 'The combined species-richness and effort-adjusted index ranking is in the middle range compared with sufficiently surveyed areas.'
+            };
+        }
+
+        return {
+            label: 'Lower',
+            className: 'concern-low',
+            color: '#2e7d32',
+            score,
+            note: 'The combined species-richness and effort-adjusted index ranking is lower than many sufficiently surveyed comparison areas.'
+        };
+    }
+
+    function buildSpeciesSummaryRows(points) {
+        const speciesMap = {};
+        points.forEach(point => {
+            const key = point.species || 'Unknown';
+            if (!speciesMap[key]) {
+                speciesMap[key] = {
+                    englishName: point.english_name || '',
+                    species: key,
+                    taxa: point.taxa || '',
+                    records: 0
+                };
+            }
+            speciesMap[key].records += 1;
+        });
+
+        return Object.values(speciesMap).sort((a, b) => b.records - a.records || a.species.localeCompare(b.species));
+    }
+
+    function renderSummary(summary) {
+        $('#results-empty, #results-loading, #results-error').addClass('hidden');
+        $('#results-content').removeClass('hidden');
+        closeResultTable();
+
+        const biodiversityIndex = summary.biodiversityIndex == null ? 'N/A' : summary.biodiversityIndex.toFixed(3);
+        const indexRank = formatRank(summary.randomComparison.indexPercentile);
+        const recordsRank = formatRank(summary.randomComparison.recordsPercentile);
+        const speciesRank = formatRank(summary.randomComparison.speciesPercentile);
+        const taxaRank = formatRank(summary.randomComparison.taxaPercentile);
+        const surveyDaysRank = formatRank(summary.randomComparison.surveyDaysPercentile);
+        const observersRank = formatRank(summary.randomComparison.observersPercentile);
+        const rankSummary = summary.randomComparison.samples > 0
+            ? formatRankSummary(summary.randomComparison.indexPercentile)
+            : 'No comparison generated';
+        const biodiversityHotspot = formatOverlap(summary.hotspotOverlap?.biodiversity);
+        const effortHotspot = formatOverlap(summary.hotspotOverlap?.effort);
+        const requestedSamples = getRandomPolygonCount();
+        const sampleDisplay = summary.randomComparison.samples === requestedSamples
+            ? summary.randomComparison.samples.toLocaleString()
+            : `${summary.randomComparison.samples.toLocaleString()} of ${requestedSamples.toLocaleString()}`;
+        const strataRepresented = Object.keys(summary.randomComparison.strataCounts || {}).length;
+        const biodiversitySamples = Number(summary.randomComparison.biodiversitySamples) || 0;
+        const concernScore = Number.isFinite(summary.concern.score)
+            ? `${Math.round(summary.concern.score)} / 100`
+            : 'Not available';
+
+        $('#metric-grid').html(`
+            <div class="metric-row">
+                <span class="metric-label">
+                    Biodiversity concern
+                    <button type="button" class="map-layer-info metric-info" aria-label="Explain biodiversity concern" aria-expanded="false" data-tooltip="A colour-coded interpretation of the relative biodiversity ranking. Lower, Moderate and High describe how this area compares with sufficiently surveyed random areas of the same shape and size. It supports ecological review and is not a construction decision.">i</button>
+                </span>
+                <b><span class="concern-label ${summary.concern.className}">${summary.concern.label}</span></b>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">
+                    Relative biodiversity ranking
+                    <button type="button" class="map-layer-info metric-info" aria-label="Explain the relative biodiversity ranking" aria-expanded="false" data-tooltip="This averages the Biodiversity Index percentile and unique-species percentile. For example, 59 / 100 means the combined result was higher than about 59% of sufficiently surveyed random comparison areas. It is not an absolute biodiversity percentage.">i</button>
+                </span>
+                <b>${concernScore}</b>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">
+                    Biodiversity Index
+                    <button type="button" class="map-layer-info metric-info" aria-label="Explain the Biodiversity Index" aria-expanded="false" data-tooltip="Unique species divided by observation records inside the drawn polygon. It helps account for different amounts of recording effort, although survey design and data quality can still affect the result.">i</button>
+                </span>
+                <b>${biodiversityIndex}</b>
+            </div>
+            <div class="metric-row"><span>Observation records</span><b>${summary.totalRecords.toLocaleString()}</b></div>
+            <div class="metric-row"><span>Unique species</span><b>${summary.uniqueSpecies.toLocaleString()}</b></div>
+            <div class="metric-row"><span>Taxa groups</span><b>${summary.taxaGroups.toLocaleString()}</b></div>
+            <div class="metric-row"><span>Survey days</span><b>${summary.surveyDays.toLocaleString()}</b></div>
+            <div class="metric-row"><span>Observers</span><b>${summary.observers.toLocaleString()}</b></div>
+            <details class="rank-details">
+                <summary><span>Comparison rankings</span><span class="rank-summary">${rankSummary}</span></summary>
+                <div class="rank-content">
+                    <p class="rank-help">${summary.randomComparison.samples > 0
+                        ? `Effort rankings compare this polygon with ${sampleDisplay} randomly positioned and rotated polygons of the same shape and size. Biodiversity rankings use the ${biodiversitySamples.toLocaleString()} comparison areas containing at least ${MIN_RECORDS_FOR_CONCERN} records across ${MIN_SURVEY_DAYS_FOR_CONCERN} survey days. “Higher than 42%” means 42% of those comparison areas had a lower result. All ${summary.randomComparison.samples.toLocaleString()} accepted comparison polygons are drawn on the map and included in the calculations.`
+                        : 'No valid same-size random comparison polygons were generated. The selected-area statistics remain valid, but relative rankings cannot be shown. Try 100 comparisons or draw a smaller area.'}</p>
+                    <div class="metric-row"><span>Biodiversity Index</span><b>${indexRank}</b></div>
+                    <div class="metric-row"><span>Observation records / effort</span><b>${recordsRank}</b></div>
+                    <div class="metric-row"><span>Unique species</span><b>${speciesRank}</b></div>
+                    <div class="metric-row"><span>Taxa groups</span><b>${taxaRank}</b></div>
+                    <div class="metric-row"><span>Survey days</span><b>${surveyDaysRank}</b></div>
+                    <div class="metric-row"><span>Observers</span><b>${observersRank}</b></div>
+                    <div class="comparison-method"><b>Comparison method:</b> ${escapeHtml(summary.randomComparison.method || 'N/A')}<br><b>Habitat strata represented:</b> ${strataRepresented || 'N/A'}</div>
+                </div>
+            </details>
+            <div class="metric-row"><span>High biodiversity-hotspot overlap</span><b>${biodiversityHotspot.high}</b></div>
+            <div class="metric-row"><span>Moderate hotspot overlap</span><b>${biodiversityHotspot.moderate}</b></div>
+            <div class="metric-row"><span>High survey-effort overlap</span><b>${effortHotspot.high}</b></div>
+            <div class="metric-row"><span>Random comparisons analysed</span><b>${sampleDisplay}</b></div>
+        `);
+        $('#concern-note').text(summary.concern.note);
+        $('#download-comparison-results').prop(
+            'disabled',
+            !(summary.randomComparison.results || []).length
+        );
+        updateProgress(
+            summary.randomComparison.samples,
+            requestedSamples,
+            `Completed ${sampleDisplay} stratified random comparisons.`
+        );
+    }
+
+    function showSpeciesTable() {
+        if (!activePolygonSummary) return;
+        const thead = $('#result-table thead').empty();
+        const tbody = $('#result-table tbody').empty();
+        thead.append('<tr><th>English Name</th><th>Scientific Name</th><th>Taxa</th><th>Records</th></tr>');
+
+        if (activePolygonSummary.speciesRows.length === 0) {
+            tbody.append('<tr><td colspan="4">No species found inside the drawn polygon.</td></tr>');
+        } else {
+            activePolygonSummary.speciesRows.forEach(row => {
+                tbody.append(`<tr><td>${escapeHtml(row.englishName)}</td><td><em>${escapeHtml(row.species)}</em></td><td>${escapeHtml(row.taxa)}</td><td>${row.records}</td></tr>`);
+            });
+        }
+
+        openResultTable('Species inside the polygon');
+    }
+
+    function showRecordsTable() {
+        if (!activePolygonSummary) return;
+        const thead = $('#result-table thead').empty();
+        const tbody = $('#result-table tbody').empty();
+        thead.append('<tr><th>English Name</th><th>Scientific Name</th><th>Observer</th><th>Date</th><th>Taxa</th></tr>');
+
+        if (activePolygonSummary.pointsInPolygon.length === 0) {
+            tbody.append('<tr><td colspan="5">No records found inside the drawn polygon.</td></tr>');
+        } else {
+            activePolygonSummary.pointsInPolygon.forEach(point => {
+                tbody.append(`<tr><td>${escapeHtml(point.english_name || '')}</td><td><em>${escapeHtml(point.species || '')}</em></td><td>${escapeHtml(point.obs || '')}</td><td>${formatDateForDisplay(point.Date)}</td><td>${escapeHtml(point.taxa || '')}</td></tr>`);
+            });
+        }
+
+        openResultTable('All records inside the polygon');
+    }
+
+    function downloadComparisonResults() {
+        if (!activePolygonSummary) return;
+
+        const comparison = activePolygonSummary.randomComparison || {};
+        const results = comparison.results || [];
+        if (!results.length) {
+            alert('No random comparison statistics are available to download.');
+            return;
+        }
+
+        const metricDefinitions = [
+            { csvName: 'biodiversity_index', requiresBiodiversityEvidence: true },
+            { csvName: 'observation_records', requiresBiodiversityEvidence: false },
+            { csvName: 'unique_species', requiresBiodiversityEvidence: true },
+            { csvName: 'taxa_groups', requiresBiodiversityEvidence: true },
+            { csvName: 'survey_days', requiresBiodiversityEvidence: false },
+            { csvName: 'observers', requiresBiodiversityEvidence: false }
+        ];
+
+        const focalRow = {
+            polygon_type: 'focal',
+            comparison_number: '',
+            habitat_stratum: 'User-selected focal polygon',
+            centroid_latitude: activePolygonSummary.focalCentroid?.latitude,
+            centroid_longitude: activePolygonSummary.focalCentroid?.longitude,
+            observation_records: activePolygonSummary.totalRecords,
+            unique_species: activePolygonSummary.uniqueSpecies,
+            biodiversity_index: activePolygonSummary.biodiversityIndex,
+            taxa_groups: activePolygonSummary.taxaGroups,
+            survey_days: activePolygonSummary.surveyDays,
+            observers: activePolygonSummary.observers,
+            comparison_seed: comparison.seed,
+            comparison_method: comparison.method,
+            ranking_direction: 'Ascending across the focal polygon and eligible random comparisons: rank 1 is lowest, the highest rank is highest, and tied values share their average rank',
+            percentile_definition: 'Percentage of ranked polygons below this result, with half credit for tied values'
+        };
+
+        const randomRows = results.map(result => ({
+            polygon_type: 'random comparison',
+            comparison_number: result.comparisonNumber,
+            habitat_stratum: result.habitatStratum,
+            centroid_latitude: result.centroidLatitude,
+            centroid_longitude: result.centroidLongitude,
+            observation_records: result.totalRecords,
+            unique_species: result.uniqueSpecies,
+            biodiversity_index: result.biodiversityIndex,
+            taxa_groups: result.taxaGroups,
+            survey_days: result.surveyDays,
+            observers: result.observers,
+            comparison_seed: comparison.seed,
+            comparison_method: comparison.method,
+            ranking_direction: 'Ascending across the focal polygon and eligible random comparisons: rank 1 is lowest, the highest rank is highest, and tied values share their average rank',
+            percentile_definition: 'Percentage of ranked polygons below this result, with half credit for tied values'
+        }));
+
+        const rows = [focalRow, ...randomRows];
+        metricDefinitions.forEach(({ csvName, requiresBiodiversityEvidence }) => {
+            const eligibleRows = rows.filter(row =>
+                row.polygon_type === 'focal' ||
+                !requiresBiodiversityEvidence ||
+                (
+                    row.observation_records >= MIN_RECORDS_FOR_CONCERN &&
+                    row.survey_days >= MIN_SURVEY_DAYS_FOR_CONCERN
+                )
+            );
+            const values = eligibleRows
+                .map(row => row[csvName])
+                .filter(Number.isFinite);
+
+            rows.forEach(row => {
+                const isEligible = eligibleRows.includes(row);
+                if (!isEligible) {
+                    row[`${csvName}_ascending_rank`] = null;
+                    row[`${csvName}_rank_out_of`] = values.length;
+                    row[`${csvName}_percentile`] = null;
+                    return;
+                }
+
+                const rank = calculateAscendingRank(row[csvName], values);
+                row[`${csvName}_ascending_rank`] = rank.rank;
+                row[`${csvName}_rank_out_of`] = rank.total;
+                row[`${csvName}_percentile`] = percentileFromAscendingRank(rank);
+            });
+        });
+
+        const headers = [
+            'polygon_type',
+            'comparison_number',
+            'habitat_stratum',
+            'centroid_latitude',
+            'centroid_longitude',
+            'observation_records',
+            'observation_records_ascending_rank',
+            'observation_records_rank_out_of',
+            'observation_records_percentile',
+            'unique_species',
+            'unique_species_ascending_rank',
+            'unique_species_rank_out_of',
+            'unique_species_percentile',
+            'biodiversity_index',
+            'biodiversity_index_ascending_rank',
+            'biodiversity_index_rank_out_of',
+            'biodiversity_index_percentile',
+            'taxa_groups',
+            'taxa_groups_ascending_rank',
+            'taxa_groups_rank_out_of',
+            'taxa_groups_percentile',
+            'survey_days',
+            'survey_days_ascending_rank',
+            'survey_days_rank_out_of',
+            'survey_days_percentile',
+            'observers',
+            'observers_ascending_rank',
+            'observers_rank_out_of',
+            'observers_percentile',
+            'comparison_seed',
+            'comparison_method',
+            'ranking_direction',
+            'percentile_definition'
+        ];
+        const csv = [
+            headers.join(','),
+            ...rows.map(row => headers.map(header => formatCsvValue(row[header])).join(','))
+        ].join('\r\n');
+
+        const blob = new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `polygon-comparison-statistics-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    }
+
+    function calculateAscendingRank(value, values) {
+        const usable = values.filter(Number.isFinite);
+        if (!Number.isFinite(value) || !usable.length) {
+            return { rank: null, total: usable.length };
+        }
+
+        const below = usable.filter(candidate => candidate < value).length;
+        const equal = usable.filter(candidate => candidate === value).length;
+        return {
+            rank: below + (equal + 1) / 2,
+            total: usable.length
+        };
+    }
+
+    function percentileFromAscendingRank(rank) {
+        if (!Number.isFinite(rank.rank) || rank.total <= 1) return null;
+        return ((rank.rank - 1) / (rank.total - 1)) * 100;
+    }
+
+    function formatCsvValue(value) {
+        if (value == null || !Number.isFinite(value) && typeof value === 'number') return '';
+        let text = String(value);
+        if (/^[=+\-@]/.test(text)) text = `'${text}`;
+        return `"${text.replace(/"/g, '""')}"`;
+    }
+
+    function openResultTable(title) {
+        $('#result-table-title').text(title);
+        $('#result-table-modal').removeClass('hidden');
+        $('body').addClass('result-modal-open');
+        $('#close-result-table').trigger('focus');
+    }
+
+    function closeResultTable() {
+        $('#result-table-modal').addClass('hidden');
+        $('body').removeClass('result-modal-open');
+    }
+
+    async function calculateHotspotOverlap(polygon) {
+        return {
+            biodiversity: await calculateLayerOverlap(
+                polygon,
+                hotspotFeatureBboxes.biodiversity,
+                'biodiversity_category'
+            ),
+            effort: await calculateLayerOverlap(
+                polygon,
+                hotspotFeatureBboxes.effort,
+                'effort_category'
+            )
+        };
+    }
+
+    async function calculateLayerOverlap(polygon, indexedFeatures, categoryField) {
+        if (!indexedFeatures.length) return null;
+        const polygonArea = turf.area(polygon);
+        if (!Number.isFinite(polygonArea) || polygonArea <= 0) return null;
+
+        const polygonBbox = turf.bbox(polygon);
+        const areaByCategory = { high: 0, moderate: 0, lower: 0, insufficient_data: 0 };
+
+        for (let start = 0; start < indexedFeatures.length; start += 25) {
+            const batch = indexedFeatures.slice(start, start + 25);
+            batch.forEach(item => {
+                if (!bboxesOverlap(polygonBbox, item.bbox)) return;
+                try {
+                    const intersection = turf.intersect(polygon, item.feature);
+                    if (!intersection) return;
+                    const category = item.feature.properties?.[categoryField] || 'insufficient_data';
+                    if (!(category in areaByCategory)) areaByCategory[category] = 0;
+                    areaByCategory[category] += turf.area(intersection);
+                } catch (error) {
+                    console.warn('Could not calculate one hotspot intersection.', error);
+                }
+            });
+            if (start + 25 < indexedFeatures.length) {
+                await waitForBrowser();
+            }
+        }
+
+        return Object.fromEntries(
+            Object.entries(areaByCategory).map(([category, area]) => [
+                category,
+                Math.min(100, (area / polygonArea) * 100)
+            ])
+        );
+    }
+
+    function formatOverlap(overlap) {
+        if (!overlap) return { high: 'Unavailable', moderate: 'Unavailable' };
+        return {
+            high: `${overlap.high.toFixed(1)}%`,
+            moderate: `${overlap.moderate.toFixed(1)}%`
+        };
+    }
+
+    function buildHabitatStrata(features) {
+        const groups = new Map();
+
+        features.filter(isPolygonFeature).forEach(feature => {
+            const name = String(feature.properties?.broad || 'Unknown habitat');
+            const area = turf.area(feature);
+            if (!Number.isFinite(area) || area <= 0) return;
+            if (!groups.has(name)) groups.set(name, { name, area: 0, features: [] });
+            const group = groups.get(name);
+            group.area += area;
+            group.features.push({ feature, area, bbox: turf.bbox(feature) });
+        });
+
+        return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    function isPolygonFeature(feature) {
+        const type = feature?.geometry?.type;
+        return type === 'Polygon' || type === 'MultiPolygon';
+    }
+
+    function buildStratumPlan(targetCount, random) {
+        if (!habitatStrata.length) return Array(targetCount).fill(null);
+        const plan = [];
+
+        if (targetCount >= habitatStrata.length) {
+            habitatStrata.forEach(stratum => plan.push(stratum));
+        }
+
+        const totalArea = habitatStrata.reduce((sum, stratum) => sum + stratum.area, 0);
+        while (plan.length < targetCount) {
+            plan.push(weightedChoice(habitatStrata, totalArea, random, item => item.area));
+        }
+        return shuffle(plan, random);
+    }
+
+    function samplePlacementTarget(stratum, estateBounds, random) {
+        if (!stratum && habitatStrata.length) {
+            const totalArea = habitatStrata.reduce((sum, item) => sum + item.area, 0);
+            const fallbackStratum = weightedChoice(
+                habitatStrata,
+                totalArea,
+                random,
+                item => item.area
+            );
+            return samplePlacementTarget(fallbackStratum, estateBounds, random);
+        }
+
+        if (!stratum) {
+            return {
+                coordinates: [
+                    estateBounds.west + random() * (estateBounds.east - estateBounds.west),
+                    estateBounds.south + random() * (estateBounds.north - estateBounds.south)
+                ],
+                stratum: null
+            };
+        }
+
+        const feature = weightedChoice(
+            stratum.features,
+            stratum.area,
+            random,
+            item => item.area
+        );
+
+        const coordinates = randomPointWithinFeature(feature.feature, feature.bbox, random);
+        return coordinates ? { coordinates, stratum: stratum.name } : null;
+    }
+
+    function sampleEstateWideTarget(estateBounds, random) {
+        return {
+            coordinates: [
+                estateBounds.west + random() * (estateBounds.east - estateBounds.west),
+                estateBounds.south + random() * (estateBounds.north - estateBounds.south)
+            ],
+            stratum: null
+        };
+    }
+
+    function randomPointWithinFeature(feature, bbox, random) {
+        for (let attempt = 0; attempt < 80; attempt += 1) {
+            const coordinates = [
+                bbox[0] + random() * (bbox[2] - bbox[0]),
+                bbox[1] + random() * (bbox[3] - bbox[1])
+            ];
+            if (turf.booleanPointInPolygon(turf.point(coordinates), feature)) {
+                return coordinates;
+            }
+        }
+        return null;
+    }
+
+    function weightedChoice(items, totalWeight, random, getWeight) {
+        let threshold = random() * totalWeight;
+        for (const item of items) {
+            threshold -= getWeight(item);
+            if (threshold <= 0) return item;
+        }
+        return items[items.length - 1];
+    }
+
+    function shuffle(items, random) {
+        for (let index = items.length - 1; index > 0; index -= 1) {
+            const swapIndex = Math.floor(random() * (index + 1));
+            [items[index], items[swapIndex]] = [items[swapIndex], items[index]];
+        }
+        return items;
+    }
+
+    function createComparisonSeed(polygon, targetCount) {
+        const coordinates = polygon.geometry.coordinates
+            .flat(2)
+            .map(value => Number(value).toFixed(6))
+            .join(',');
+        let hash = 2166136261;
+        const source = `${coordinates}|${targetCount}|${$('#habitat-year-filter').val()}`;
+        for (let index = 0; index < source.length; index += 1) {
+            hash ^= source.charCodeAt(index);
+            hash = Math.imul(hash, 16777619);
+        }
+        return hash >>> 0 || 1;
+    }
+
+    function mulberry32(seed) {
+        let value = seed >>> 0;
+        return function random() {
+            value += 0x6D2B79F5;
+            let result = value;
+            result = Math.imul(result ^ (result >>> 15), result | 1);
+            result ^= result + Math.imul(result ^ (result >>> 7), result | 61);
+            return ((result ^ (result >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    function getRandomPlacementBounds() {
+        const placementArea = habitatGeoJson?.features?.length
+            ? habitatGeoJson
+            : habitatEstateBoundary;
+        if (!placementArea) return null;
+        const bbox = turf.bbox(placementArea);
+        return { west: bbox[0], south: bbox[1], east: bbox[2], north: bbox[3] };
+    }
+
+    function polygonOverlapsMappedEstate(polygon) {
+        if (!habitatGeoJson || !habitatFeatureBboxes.length) return true;
+
+        const estateBoundary = getHabitatEstateBoundary();
+        if (estateBoundary) {
+            try {
+                return !turf.booleanDisjoint(polygon, estateBoundary);
+            } catch (error) {
+                // Continue to the individual habitat-feature fallback below.
+            }
+        }
+
+        const polygonBbox = turf.bbox(polygon);
+
+        return habitatFeatureBboxes.some(item => {
+            if (!bboxesOverlap(polygonBbox, item.bbox)) return false;
+            try {
+                return !turf.booleanDisjoint(polygon, item.feature);
+            } catch (error) {
+                return false;
+            }
+        });
+    }
+
+    function getHabitatEstateBoundary() {
+        if (habitatEstateBoundary) return habitatEstateBoundary;
+        const polygons = (habitatGeoJson?.features || []).filter(feature => {
+            const type = feature?.geometry?.type;
+            return type === 'Polygon' || type === 'MultiPolygon';
+        });
+        if (!polygons.length) return null;
+
+        habitatEstateBoundary = polygons[0];
+        for (let index = 1; index < polygons.length; index += 1) {
+            try {
+                habitatEstateBoundary = turf.union(habitatEstateBoundary, polygons[index]);
+            } catch (error) {
+                // Keep the successfully merged geometry and continue.
+            }
+        }
+        return habitatEstateBoundary;
+    }
+
+    function bboxesOverlap(a, b) {
+        return a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+    }
+
+    function drawRandomPolygons(features, analysedCount = 0) {
+        randomPolygonPreviewLayer.clearLayers();
+        const status = $('#preview-status');
+        if (!features.length) {
+            status.addClass('hidden').text('');
+            return;
+        }
+
+        L.geoJSON(turf.featureCollection(features), {
+            pane: 'previewPane',
+            renderer: randomPolygonCanvasRenderer,
+            style: {
+                color: '#d00000',
+                fill: false,
+                weight: 1.5,
+                opacity: 0.48
+            },
+            interactive: false
+        }).addTo(randomPolygonPreviewLayer);
+
+        const displayedCount = features.length;
+        const acceptedCount = Math.max(displayedCount, Number(analysedCount) || 0);
+        status
+            .text(
+                displayedCount === acceptedCount
+                    ? `Showing all ${displayedCount.toLocaleString()} accepted comparison polygons`
+                    : `Showing ${displayedCount.toLocaleString()} of ${acceptedCount.toLocaleString()} accepted comparison polygons`
+            )
+            .removeClass('hidden');
+    }
+
+    function prepareFocalPolygonLayer(layer) {
+        if (!layer.setStyle) return;
+        layer.setStyle({ color: '#111827', fillColor: '#60a5fa', fillOpacity: 0.35, weight: 4, pane: 'drawPane' });
+        if (layer.bringToFront) layer.bringToFront();
+    }
+
+    function updateFocalPolygonStyle(layer, concern) {
+        if (!layer.setStyle || !concern) return;
+        layer.setStyle({ color: concern.color, fillColor: concern.color, fillOpacity: 0.35, weight: 5 });
+        if (layer.bringToFront) layer.bringToFront();
+    }
+
+    function keepLayerVisible(layer) {
+        if (!layer.getBounds) return;
+        map.panInsideBounds(layer.getBounds().pad(0.25), { animate: true });
+    }
+
+    function calculatePercentileRank(focalValue, values) {
+        const usable = values.filter(Number.isFinite);
+        if (!Number.isFinite(focalValue) || usable.length === 0) return null;
+
+        const below = usable.filter(value => value < focalValue).length;
+        const equal = usable.filter(value => value === focalValue).length;
+
+        return ((below + 0.5 * equal) / usable.length) * 100;
+    }
+
+    function formatRank(value) {
+        if (!Number.isFinite(value)) return 'Not enough comparison data';
+        if (value < 1) return 'Lower than almost all areas';
+        if (value >= 99) return 'Higher than almost all areas';
+        return `Higher than ${Math.round(value)}% of areas`;
+    }
+
+    function formatRankSummary(value) {
+        if (!Number.isFinite(value)) return 'Insufficient data';
+        if (value < 10) return 'Index: lower 10%';
+        if (value >= 90) return 'Index: top 10%';
+        return 'Index: middle range';
+    }
+
+    function getRandomPolygonCount() {
+        return Number($('#comparison-count').val()) || 250;
+    }
+
+    function updateProgress(done, total, message) {
+        const percent = Math.min(100, Math.round((done / total) * 100));
+        $('#progress-text').text(message);
+        $('#progress-fill').css('width', `${percent}%`);
+    }
+
+    function setLoadingState(message) {
+        $('#results-empty, #results-content, #results-error').addClass('hidden');
+        $('#results-loading').removeClass('hidden');
+        $('#progress-text').text(message);
+        $('#progress-fill').css('width', '0%');
+    }
+
+    function setEmptyState() {
+        $('#results-loading, #results-content, #results-error').addClass('hidden');
+        $('#results-empty').removeClass('hidden');
+    }
+
+    function setErrorState(message) {
+        $('#results-empty, #results-loading, #results-content').addClass('hidden');
+        $('#results-error').text(message).removeClass('hidden');
+    }
+
+    function clearPolygons() {
+        cancelPolygonWorkerAnalysis();
+        drawnItems.clearLayers();
+        randomPolygonPreviewLayer.clearLayers();
+        $('#preview-status').addClass('hidden').text('');
+        activePolygonSummary = null;
+        closeResultTable();
+        setEmptyState();
+    }
+
+    function waitForBrowser() {
+        return new Promise(resolve => {
+            if ('requestIdleCallback' in window) {
+                requestIdleCallback(resolve, { timeout: 80 });
+            } else {
+                setTimeout(resolve, 0);
+            }
+        });
+    }
+
+    function formatDateForDisplay(value) {
+        if (!value) return '';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '';
+        return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+    }
+
+    function getHabitatColor(classification) {
+        switch (classification) {
+            case 'arable margins': return '#FFA500';
+            case 'buildings': return '#696969';
+            case 'freshwater': return '#ADD8E6';
+            case 'garden': return '#9ACD32';
+            case 'hedge': return '#6B8E23';
+            case 'intertidal mudflat': return '#D2B48C';
+            case 'modified grassland': return '#00AA00';
+            case 'natural grassland': return '#ADFF2F';
+            case 'other developed land': return '#778899';
+            case '(unsealed unvegetated surface)': return '#800080';
+            case 'woodland': return '#228B22';
+            default: return '#444444';
+        }
+    }
+
+    function stringToColor(value) {
+        const text = String(value || 'Unknown');
+        let hash = 0;
+        for (let index = 0; index < text.length; index += 1) {
+            hash = text.charCodeAt(index) + ((hash << 5) - hash);
+        }
+        let color = '#';
+        for (let index = 0; index < 3; index += 1) {
+            const component = (hash >> (index * 8)) & 0xFF;
+            color += component.toString(16).padStart(2, '0');
+        }
+        return color;
+    }
+
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+});
+</script>
+</body>
+</html>

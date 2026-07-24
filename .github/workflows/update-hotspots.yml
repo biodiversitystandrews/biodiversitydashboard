@@ -1,0 +1,77 @@
+name: Update Biodiversity Hotspot Layers
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Update Parquet Data from Google Drive
+      - Update BigData Parquet from Google Drive
+      - Update 2023 Parquet Data from Google Drive
+      - Update Intern Parquet Data from Google Drive
+      - Update VIP Parquet Data from Google Drive
+      - Update Habitat GeoJSON from Google Drive
+    types: [completed]
+  push:
+    branches:
+      - main
+    paths:
+      - "data/*.parquet"
+      - "data/habitats*.geojson"
+      - "hotspotprocessing.py"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-hotspot-layers
+  cancel-in-progress: true
+
+jobs:
+  build-and-commit:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install GDAL dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin libgdal-dev
+
+      - name: Install Python packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate hotspot layers
+        run: |
+          python hotspotprocessing.py --cell-size 100
+
+      - name: Commit and push changed hotspot layers
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add data/biodiversity_hotspots.geojson
+          git add data/survey_effort_hotspots.geojson
+          git add data/university_estate_boundary.geojson
+
+          if git diff --staged --quiet; then
+            echo "No hotspot changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Chore: Update biodiversity hotspot layers"
+          git pull --rebase origin main
+          git push origin HEAD:main

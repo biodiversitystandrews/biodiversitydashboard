@@ -1,16 +1,19 @@
 import os
 import sys
+import gzip
 import pandas as pd
 import numpy as np
-import json
 import re
-from fastapi import FastAPI, HTTPException
+from functools import lru_cache
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import Response, JSONResponse
 from typing import Optional, List
 from pathlib import Path
 from math import ceil, floor
+from threading import Lock
 from scipy.stats import entropy
 from dashboard_standardisation import standardise_date_series
 
@@ -19,6 +22,8 @@ app = FastAPI(title="Biodiversity Dashboard", version="1.0.0")
 origins = [
     "https://biodiversitydashboard-ls.netlify.app",
     "https://biodiversitydashboard-new.netlify.app",
+    "http://127.0.0.1:5500",
+    "http://localhost:5500",
 ]
 
 app.add_middleware(
@@ -29,53 +34,190 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Compress larger API responses before sending them to the browser.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 @app.head("/")
 def read_root_head():
     return Response(status_code=200)
 
 DATA_PATH = Path(__file__).parent / "data"
 
+# Static map files only change when new data is deployed, so loading them once
+# avoids repeatedly reading and encoding the same JSON for every visitor.
+@lru_cache(maxsize=32)
+def load_static_json(filename: str) -> bytes:
+    return (DATA_PATH / filename).read_bytes()
+
+
+def static_json_response(filename: str, missing_message: str):
+    """Return a cached JSON file with short-lived browser caching enabled."""
+    file_path = DATA_PATH / filename
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail=missing_message)
+    return Response(
+        content=load_static_json(filename),
+        media_type="application/json",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
 _cached_df = None
+_dataframe_lock = Lock()
+
+MAP_COLUMNS = [
+    "id",
+    "english_name",
+    "species",
+    "obs",
+    "Date",
+    "taxa",
+    "latitude",
+    "longitude",
+]
+
+POLYGON_ANALYSIS_COLUMNS = [
+    "english_name",
+    "species",
+    "obs",
+    "Date",
+    "taxa",
+    "latitude",
+    "longitude",
+]
+
+MAP_AGGREGATION_THRESHOLD = 10_000
+MAP_GRID_DEGREES = 0.001
 
 def get_dataframe() -> pd.DataFrame:
+    """Return the shared DataFrame, loading it once even under concurrent calls."""
     global _cached_df
-    if _cached_df is None:
-        print("Cache is empty. Loading data from disk...")
-        parquet_files = list(DATA_PATH.glob("*.parquet"))
-        if not parquet_files:
-            raise HTTPException(status_code=500, detail="No parquet data files found on server.")
-        
-        try:
-            df_list = [pd.read_parquet(file) for file in parquet_files]
-            _df = pd.concat(df_list, ignore_index=True)
+    if _cached_df is not None:
+        return _cached_df
 
-            if "Taxa" in _df.columns:
-                _df = _df.rename(columns={"Taxa": "taxa"})
-            
-            if "Date" in _df.columns:
-                _df["Date"] = standardise_date_series(_df["Date"])
-                _df["month"] = _df["Date"].dt.month
-            
-            
-            if "year" in _df.columns:
-                _df["year"] = _df["year"].astype("category")
-
-            for col in ["english_name", "species", "obs", "taxa"]:
-                if col in _df.columns:
-                    _df[col] = _df[col].astype("category")
-            if 'count' in _df.columns:
-                _df['count'] = pd.to_numeric(_df['count'], errors='coerce')
-            if 'id' not in _df.columns:
-                _df.reset_index(inplace=True)
-                _df = _df.rename(columns={'index': 'id'})
-            
-            _cached_df = _df
-            print("Data loaded and cached successfully.")
-        except Exception as e:
-            print(f"Error loading data: {e}", file=sys.stderr)
-            raise HTTPException(status_code=500, detail="Could not load or process data files.")
-    
+    with _dataframe_lock:
+        if _cached_df is None:
+            _cached_df = load_dataframe_from_disk()
     return _cached_df
+
+
+def load_dataframe_from_disk() -> pd.DataFrame:
+    """Load, standardise, and optimise all dashboard Parquet records."""
+    print("Cache is empty. Loading data from disk...")
+    parquet_files = list(DATA_PATH.glob("*.parquet"))
+    if not parquet_files:
+        raise HTTPException(status_code=500, detail="No parquet data files found on server.")
+
+    try:
+        frames = [pd.read_parquet(file) for file in parquet_files]
+        dataframe = pd.concat(frames, ignore_index=True)
+
+        if "Taxa" in dataframe.columns:
+            dataframe = dataframe.rename(columns={"Taxa": "taxa"})
+
+        if "Date" in dataframe.columns:
+            dataframe["Date"] = standardise_date_series(dataframe["Date"])
+            dataframe["month"] = dataframe["Date"].dt.month
+
+        if "year" in dataframe.columns:
+            dataframe["year"] = dataframe["year"].astype("category")
+
+        for column in ["english_name", "species", "obs", "taxa"]:
+            if column in dataframe.columns:
+                dataframe[column] = dataframe[column].astype("category")
+
+        if "count" in dataframe.columns:
+            dataframe["count"] = pd.to_numeric(dataframe["count"], errors="coerce")
+        if "id" not in dataframe.columns:
+            dataframe.reset_index(inplace=True)
+            dataframe = dataframe.rename(columns={"index": "id"})
+
+        print("Data loaded and cached successfully.")
+        return dataframe
+    except Exception as error:
+        print(f"Error loading data: {error}", file=sys.stderr)
+        raise HTTPException(
+            status_code=500,
+            detail="Could not load or process data files.",
+        ) from error
+
+
+def prepare_map_dataframe(
+    query_df: pd.DataFrame,
+    columns: Optional[List[str]] = None,
+) -> pd.DataFrame:
+    """Select and clean the fields required by map and polygon interfaces."""
+    selected_columns = columns or MAP_COLUMNS
+    map_df = query_df.dropna(subset=["latitude", "longitude"]).copy()
+    map_df = map_df[selected_columns]
+    return (
+        map_df.replace([np.inf, -np.inf], None)
+        .astype(object)
+        .where(pd.notnull(map_df), None)
+    )
+
+
+def aggregate_map_dataframe(map_df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate large overview maps while retaining drill-down cell bounds."""
+    if len(map_df) <= MAP_AGGREGATION_THRESHOLD:
+        map_df["is_aggregate"] = False
+        map_df["record_count"] = 1
+        map_df["unique_species"] = map_df["species"].notna().astype("int64")
+        return map_df
+
+    working = map_df.copy()
+    working["taxa"] = working["taxa"].astype(object).where(
+        working["taxa"].notna(),
+        "Unknown",
+    )
+    working["grid_latitude"] = (
+        np.floor(pd.to_numeric(working["latitude"]) / MAP_GRID_DEGREES)
+        * MAP_GRID_DEGREES
+    )
+    working["grid_longitude"] = (
+        np.floor(pd.to_numeric(working["longitude"]) / MAP_GRID_DEGREES)
+        * MAP_GRID_DEGREES
+    )
+
+    grouped = working.groupby(
+        ["grid_latitude", "grid_longitude", "taxa"],
+        observed=True,
+        dropna=False,
+    )
+    aggregated = grouped.agg(
+        id=("id", "first"),
+        english_name=("english_name", "first"),
+        species=("species", "first"),
+        obs=("obs", "first"),
+        Date=("Date", "max"),
+        record_count=("id", "size"),
+        unique_species=("species", "nunique"),
+    ).reset_index()
+    aggregated["latitude"] = aggregated["grid_latitude"] + MAP_GRID_DEGREES / 2
+    aggregated["longitude"] = aggregated["grid_longitude"] + MAP_GRID_DEGREES / 2
+    aggregated["bbox_west"] = aggregated["grid_longitude"]
+    aggregated["bbox_south"] = aggregated["grid_latitude"]
+    aggregated["bbox_east"] = aggregated["grid_longitude"] + MAP_GRID_DEGREES
+    aggregated["bbox_north"] = aggregated["grid_latitude"] + MAP_GRID_DEGREES
+    aggregated["is_aggregate"] = True
+    return aggregated.drop(columns=["grid_latitude", "grid_longitude"])
+
+
+@lru_cache(maxsize=1)
+def get_polygon_analysis_payload() -> bytes:
+    """Serialise the unfiltered polygon dataset once per API process."""
+    map_df = prepare_map_dataframe(get_dataframe(), POLYGON_ANALYSIS_COLUMNS)
+    map_df["Date"] = pd.to_datetime(map_df["Date"], errors="coerce").dt.strftime(
+        "%Y-%m-%d"
+    )
+    return map_df.to_json(
+        orient="values",
+    ).encode("utf-8")
+
+
+@lru_cache(maxsize=1)
+def get_compressed_polygon_analysis_payload() -> bytes:
+    """Compress the polygon payload once instead of once per visitor."""
+    return gzip.compress(get_polygon_analysis_payload(), compresslevel=6)
 
 def apply_filters(
     query_df: pd.DataFrame,
@@ -137,12 +279,10 @@ def get_management_years():
 
 @app.get("/api/management_points")
 def get_management_points(year: str):
-    management_file = DATA_PATH / f"management_{year}.geojson"
-    if not management_file.is_file():
-        raise HTTPException(status_code=404, detail=f"Management data for year {year} not found.")
-    with open(management_file, 'r') as f:
-        data = json.load(f)
-    return JSONResponse(content=data)
+    return static_json_response(
+        f"management_{year}.geojson",
+        f"Management data for year {year} not found.",
+    )
 
 @app.get("/api/cameratrap_years")
 def get_cameratrap_years():
@@ -156,30 +296,52 @@ def get_cameratrap_years():
 
 @app.get("/api/cameratrap_points")
 def get_cameratrap_points(year: str):
-    cameratrap_file = DATA_PATH / f"cameratraps_{year}.geojson"
-    if not cameratrap_file.is_file():
-        raise HTTPException(status_code=404, detail=f"Camera trap data for year {year} not found.")
-    with open(cameratrap_file, 'r') as f:
-        data = json.load(f)
-    return JSONResponse(content=data)
+    return static_json_response(
+        f"cameratraps_{year}.geojson",
+        f"Camera trap data for year {year} not found.",
+    )
 
 @app.get("/api/habitat_polygons")
 def get_habitat_polygons(year: Optional[str] = "2024-25"):
-    habitat_file = DATA_PATH / f"habitats_{year}.geojson"
-    if not habitat_file.is_file():
-        raise HTTPException(status_code=404, detail=f"Habitat data for year {year} not found.")
-    with open(habitat_file, 'r') as f:
-        data = json.load(f)
-    return JSONResponse(content=data)
+    return static_json_response(
+        f"habitats_{year}.geojson",
+        f"Habitat data for year {year} not found.",
+    )
+
+
+@app.get("/api/estate-boundary")
+def get_estate_boundary():
+    """Return the pre-unioned University Estate habitat boundary."""
+    return static_json_response(
+        "university_estate_boundary.geojson",
+        "The combined University Estate boundary has not been generated yet.",
+    )
 
 @app.get("/api/summary/habitat")
 def get_habitat_summary():
-    summary_file = DATA_PATH / "habitat_summary.json"
-    if not summary_file.is_file():
-        raise HTTPException(status_code=404, detail="Habitat summary file not found.")
-    with open(summary_file, 'r') as f:
-        data = json.load(f)
-    return JSONResponse(content=data)
+    return static_json_response(
+        "habitat_summary.json",
+        "Habitat summary file not found.",
+    )
+
+
+@app.get("/api/hotspots/{metric}")
+def get_hotspots(metric: str):
+    """Return a precomputed biodiversity or survey-effort hotspot layer."""
+    hotspot_files = {
+        "biodiversity": "biodiversity_hotspots.geojson",
+        "effort": "survey_effort_hotspots.geojson",
+    }
+    filename = hotspot_files.get(metric.lower())
+    if filename is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Metric must be either 'biodiversity' or 'effort'.",
+        )
+    return static_json_response(
+        filename,
+        f"The {metric} hotspot layer has not been generated yet.",
+    )
 
 @app.get("/api/all_unique_species")
 def get_all_unique_species(page: int = 1, page_size: int = 10):
@@ -287,15 +449,27 @@ def get_map_data(
 ):
     df = get_dataframe()
     query_df = apply_filters(df, english_name, species, obs, taxa, year, month, bbox)
-    map_df = query_df.dropna(subset=['latitude', 'longitude']).copy()
-    map_df = map_df[['id', 'english_name', 'species', 'obs', 'Date', 'taxa', 'latitude', 'longitude']]
-    map_df = (
-        map_df.replace([np.inf, -np.inf], None)
-        .astype(object)
-        .where(pd.notnull(map_df), None)
-    )
+    map_df = prepare_map_dataframe(query_df)
+    map_df = aggregate_map_dataframe(map_df)
     records = map_df.to_dict(orient="records")
     return JSONResponse(content=jsonable_encoder(records))
+
+
+@app.get("/api/polygon-analysis-data")
+def get_polygon_analysis_data(request: Request):
+    """Return a cached compact dataset for the dedicated polygon tool."""
+    accepts_gzip = "gzip" in request.headers.get("accept-encoding", "").lower()
+    headers = {"Cache-Control": "public, max-age=300"}
+    payload = get_polygon_analysis_payload()
+    if accepts_gzip:
+        payload = get_compressed_polygon_analysis_payload()
+        headers["Content-Encoding"] = "gzip"
+
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers=headers,
+    )
 
 @app.get("/api/summary/diversity")
 def get_diversity_summary(

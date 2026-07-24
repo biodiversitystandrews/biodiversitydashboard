@@ -9,8 +9,7 @@
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
-    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
-    
+
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
@@ -18,6 +17,7 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
     
     <style>
         :root {
@@ -121,9 +121,91 @@
         }
 
         #map-container { height: 600px; border-radius: 8px; }
+        .observation-cluster {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 46px;
+            height: 46px;
+            border-radius: 50%;
+            border: 4px solid rgba(255, 255, 255, 0.55);
+            box-sizing: border-box;
+            color: #1f2933;
+            font-weight: 700;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+        }
+        .observation-cluster span {
+            display: block;
+            white-space: nowrap;
+            font-size: var(--cluster-font-size, 11px);
+            line-height: 1;
+            font-variant-numeric: tabular-nums;
+        }
+        .observation-cluster-small { background: rgba(110, 204, 57, 0.88); }
+        .observation-cluster-medium { background: rgba(240, 194, 12, 0.88); }
+        .observation-cluster-large { background: rgba(241, 128, 23, 0.9); }
         .map-controls { padding: 0 1.5em 1.5em 1.5em; display: flex; flex-wrap: wrap; gap: 1em; align-items: center; }
         .map-controls label { font-weight: bold; }
         .map-controls select { padding: 8px; border-radius: 5px; border: 1px solid var(--border-color); }
+        .area-filter-controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0;
+            border: 2px solid rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+            background: #fff;
+            background-clip: padding-box;
+        }
+        .area-tool-button {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 34px;
+            padding: 0;
+            border-radius: 0;
+            border-bottom: 1px solid #ccc;
+            background: #fff;
+            color: #333;
+        }
+        .area-tool-button:last-child { border-bottom: 0; }
+        .area-tool-button:hover { background: #f4f4f4; color: #111; }
+        .area-tool-button.secondary { background: #fff; color: #333; }
+        .area-tool-button svg {
+            width: 18px;
+            height: 18px;
+            stroke-width: 2.25;
+            pointer-events: none;
+        }
+        .area-tool-button::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            z-index: 1000;
+            top: 50%;
+            left: calc(100% + 9px);
+            width: max-content;
+            max-width: min(260px, 75vw);
+            padding: 7px 9px;
+            border-radius: 4px;
+            background: #212529;
+            color: #fff;
+            font: 400 13px/1.35 Arial, sans-serif;
+            text-align: left;
+            white-space: normal;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transform: translateY(-50%);
+        }
+        .area-tool-button:hover::after,
+        .area-tool-button:focus-visible::after {
+            opacity: 1;
+            visibility: visible;
+        }
+        .area-tool-button:disabled { opacity: 0.45; cursor: not-allowed; }
+        .hidden { display: none !important; }
         .legend-container {
             background: rgba(255,255,255,0.9);
             box-shadow: 0 1px 5px rgba(0,0,0,0.4);
@@ -192,7 +274,9 @@
 </head>
 <body>
     <h1>Biodiversity Dashboard</h1>
-
+    <p>
+        <a href="polygon-analysis.html">Open Polygon Comparison Tool</a>
+    </p>
     <div class="filter-bar">
         <div class="filter-group"><label for="english_name-filter">English Name</label><select id="english_name-filter" class="filter-select" multiple="multiple"></select></div>
         <div class="filter-group"><label for="species-filter">Scientific Name</label><select id="species-filter" class="filter-select" multiple="multiple"></select></div>
@@ -339,16 +423,27 @@
 
 <script>
 $(document).ready(function() {
-    const API_BASE_URL = "https://biodiversity-dashboard-icck.onrender.com";
+    const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '']);
+    const API_BASE_URL = LOCAL_HOSTS.has(window.location.hostname)
+        ? "http://127.0.0.1:8000"
+        : "https://biodiversity-dashboard-icck.onrender.com";
     const plotlyConfig = { responsive: true, displaylogo: false };
     const monthNames = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const MAP_MARKER_BATCH_SIZE = 500;
     
     let isUpdatingFilters = false;
     let isInitialLoad = true;
+    let filterUpdateTimer = null;
+    let dashboardUpdateToken = 0;
+    let mapRenderToken = 0;
     let annualData = [];
     let habitatSummaryData = null;
     let map, drawnItems, highlightedMarker = null;
+    let activeAreaLayer = null;
+    let areaDrawHandler = null;
+    let areaEditOriginalBounds = null;
     let geographicFilter = null;
+    let mapDrilldownBbox = null;
     let currentMapData = [];
     
     let markerLayers = {}, taxaLayerGroups = {}, taxaColors = {}, taxaVisibilityState = {};
@@ -375,6 +470,7 @@ $(document).ready(function() {
         });
 
         initializeMap();
+        if (window.lucide) lucide.createIcons();
         
         const annualTrendsContainer = $('#annual-trends-container');
         annualTrendsContainer.on('click', '#annual-absolute-btn', drawAnnualChart);
@@ -395,14 +491,19 @@ $(document).ready(function() {
         $('#habitat-year-filter').on('change', () => loadHabitatLayer());
         $('#management-year-filter').on('change', () => loadManagementLayer());
         $('#cameratrap-year-filter').on('change', () => loadCameraTrapLayer());
+        $('#select-map-area').on('click', beginAreaSelection);
+        $('#edit-map-area').on('click', beginAreaEdit);
+        $('#apply-map-area').on('click', applyAreaEdit);
+        $('#cancel-map-area').on('click', cancelAreaEdit);
+        $('#clear-map-area').on('click', () => clearAreaFilter(true));
 
         const initialUpdatePromise = updateFilterOptions().then(updateAllDashboardComponents);
         
-        updateHabitatSummary(); 
-        updateAnnualTrends();
-        loadUniqueSpeciesTable(1);
-        initializeManagementFilter();
-        initializeCameraTrapFilter();
+        setTimeout(updateHabitatSummary, 150);
+        setTimeout(updateAnnualTrends, 300);
+        setTimeout(() => loadUniqueSpeciesTable(1), 450);
+        setTimeout(initializeManagementFilter, 600);
+        setTimeout(initializeCameraTrapFilter, 750);
 
         loadHabitatLayer().then(() => {
             $.when(initialUpdatePromise).done(checkAndFitBounds);
@@ -410,7 +511,12 @@ $(document).ready(function() {
     }
 
     function initializeMap() {
-        map = L.map('map-container').setView([56.340, -2.796], 13);
+        map = L.map('map-container', {
+            preferCanvas: true,
+            scrollWheelZoom: true,
+            zoomControl: true
+        }).setView([56.340, -2.796], 13);
+
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
@@ -418,51 +524,26 @@ $(document).ready(function() {
         map.createPane('habitatPane');
         map.getPane('habitatPane').style.zIndex = 390;
         map.createPane('markerPane');
-        map.getPane('markerPane').style.zIndex = 400;
+        // Keep observation totals readable when auxiliary marker clusters overlap them.
+        map.getPane('markerPane').style.zIndex = 430;
         map.createPane('managementPane');
-        map.getPane('managementPane').style.zIndex = 410;
+        map.getPane('managementPane').style.zIndex = 400;
         map.createPane('cameraTrapPane');
-        map.getPane('cameraTrapPane').style.zIndex = 420;
+        map.getPane('cameraTrapPane').style.zIndex = 410;
         
         drawnItems = new L.FeatureGroup();
         map.addLayer(drawnItems);
-
-        const drawControl = new L.Control.Draw({
-            draw: {
-                polygon: { shapeOptions: { color: '#007bff' } },
-                polyline: false, circle: false, marker: false, circlemarker: false,
-                rectangle: { shapeOptions: { color: '#007bff' } }
-            },
-            edit: { featureGroup: drawnItems, remove: true }
-        });
-        map.addControl(drawControl);
+        addAreaFilterControl();
 
         map.on(L.Draw.Event.CREATED, function (e) {
-            drawnItems.clearLayers();
-            const layer = e.layer;
-            drawnItems.addLayer(layer);
-
             if (e.layerType === 'rectangle') {
-                const bounds = layer.getBounds();
-                geographicFilter = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
-                updateAllDashboardComponents();
-                return;
-            }
-
-            if (e.layerType === 'polygon') {
-                geographicFilter = null;
-                const summary = getPolygonSelectionSummary(layer);
-                showPolygonSummary(layer, summary);
+                setAreaFilterLayer(e.layer);
+                updateAllDashboardComponents({ refreshMap: false });
             }
         });
-
-        map.on(L.Draw.Event.DELETED, function () {
-            const hadGeographicFilter = geographicFilter !== null;
-            geographicFilter = null;
-
-            if (hadGeographicFilter) {
-                updateAllDashboardComponents();
-            }
+        map.on(L.Draw.Event.DRAWSTOP, function () {
+            areaDrawHandler = null;
+            updateAreaFilterControls();
         });
 
         const legendContainer = L.control({position: 'bottomright'});
@@ -480,6 +561,111 @@ $(document).ready(function() {
             return div;
         };
         legendContainer.addTo(map);
+    }
+
+    function addAreaFilterControl() {
+        const areaControl = L.control({ position: 'topleft' });
+        areaControl.onAdd = function() {
+            const container = L.DomUtil.create('div', 'area-filter-controls');
+            container.setAttribute('role', 'toolbar');
+            container.setAttribute('aria-label', 'Map area filter');
+            container.innerHTML = `
+                <button type="button" id="select-map-area" class="area-tool-button" aria-label="Select a map area" data-tooltip="Draw a rectangle to filter dashboard summaries and tables. Map markers remain visible for context."><i data-lucide="pentagon"></i></button>
+                <button type="button" id="edit-map-area" class="area-tool-button" aria-label="Edit the selected map area" data-tooltip="Adjust the selected analysis area. Map markers remain visible for context." disabled><i data-lucide="pencil"></i></button>
+                <button type="button" id="apply-map-area" class="area-tool-button hidden" aria-label="Apply area changes" data-tooltip="Apply the edited area"><i data-lucide="check"></i></button>
+                <button type="button" id="cancel-map-area" class="area-tool-button hidden" aria-label="Cancel area changes" data-tooltip="Cancel editing and restore the previous area"><i data-lucide="x"></i></button>
+                <button type="button" id="clear-map-area" class="area-tool-button" aria-label="Clear the selected map area" data-tooltip="Remove the map-area filter" disabled><i data-lucide="trash-2"></i></button>
+            `;
+            L.DomEvent.disableClickPropagation(container);
+            L.DomEvent.disableScrollPropagation(container);
+            return container;
+        };
+        areaControl.addTo(map);
+    }
+
+    function beginAreaSelection() {
+        if (areaDrawHandler) return;
+        cancelAreaEdit();
+        areaDrawHandler = new L.Draw.Rectangle(map, {
+            shapeOptions: { color: '#007bff', weight: 3, fillOpacity: 0.18 }
+        });
+        areaDrawHandler.enable();
+        updateAreaFilterControls();
+    }
+
+    function setAreaFilterLayer(layer) {
+        if (activeAreaLayer?.editing) activeAreaLayer.editing.disable();
+        mapDrilldownBbox = null;
+        drawnItems.clearLayers();
+        activeAreaLayer = layer;
+        activeAreaLayer.setStyle({ color: '#007bff', weight: 3, fillOpacity: 0.18 });
+        drawnItems.addLayer(activeAreaLayer);
+        setGeographicFilterFromBounds(activeAreaLayer.getBounds());
+        areaEditOriginalBounds = null;
+        updateAreaFilterControls();
+    }
+
+    function setGeographicFilterFromBounds(bounds) {
+        geographicFilter = [
+            bounds.getWest(),
+            bounds.getSouth(),
+            bounds.getEast(),
+            bounds.getNorth()
+        ].join(',');
+    }
+
+    function beginAreaEdit() {
+        if (!activeAreaLayer || areaEditOriginalBounds) return;
+        if (areaDrawHandler) areaDrawHandler.disable();
+        areaEditOriginalBounds = L.latLngBounds(
+            activeAreaLayer.getBounds().getSouthWest(),
+            activeAreaLayer.getBounds().getNorthEast()
+        );
+        activeAreaLayer.editing.enable();
+        updateAreaFilterControls();
+    }
+
+    function applyAreaEdit() {
+        if (!activeAreaLayer || !areaEditOriginalBounds) return;
+        activeAreaLayer.editing.disable();
+        mapDrilldownBbox = null;
+        setGeographicFilterFromBounds(activeAreaLayer.getBounds());
+        areaEditOriginalBounds = null;
+        updateAreaFilterControls();
+        updateAllDashboardComponents({ refreshMap: false });
+    }
+
+    function cancelAreaEdit() {
+        if (!activeAreaLayer || !areaEditOriginalBounds) return;
+        activeAreaLayer.setBounds(areaEditOriginalBounds);
+        activeAreaLayer.editing.disable();
+        areaEditOriginalBounds = null;
+        updateAreaFilterControls();
+    }
+
+    function clearAreaFilter(updateDashboard) {
+        const hadFilter = geographicFilter !== null;
+        mapDrilldownBbox = null;
+        if (areaDrawHandler) areaDrawHandler.disable();
+        if (activeAreaLayer?.editing) activeAreaLayer.editing.disable();
+        drawnItems.clearLayers();
+        activeAreaLayer = null;
+        areaEditOriginalBounds = null;
+        geographicFilter = null;
+        updateAreaFilterControls();
+        if (updateDashboard && hadFilter) {
+            updateAllDashboardComponents({ refreshMap: false });
+        }
+    }
+
+    function updateAreaFilterControls() {
+        const hasArea = activeAreaLayer !== null;
+        const editing = areaEditOriginalBounds !== null;
+        const drawing = areaDrawHandler !== null;
+        $('#select-map-area').prop('disabled', drawing || editing);
+        $('#edit-map-area').prop('disabled', !hasArea || drawing || editing);
+        $('#clear-map-area').prop('disabled', !hasArea || drawing || editing);
+        $('#apply-map-area, #cancel-map-area').toggleClass('hidden', !editing);
     }
 
     function checkAndFitBounds() {
@@ -582,7 +768,9 @@ $(document).ready(function() {
         if (managementClusterGroup) {
             map.removeLayer(managementClusterGroup);
         }
-        managementClusterGroup = L.markerClusterGroup({ pane: 'managementPane' });
+        managementClusterGroup = L.markerClusterGroup({
+            clusterPane: 'managementPane'
+        });
 
         return $.get(`${API_BASE_URL}/api/management_points`, { year: selectedYear }).done(data => {
             if (!data || !data.features) {
@@ -603,8 +791,9 @@ $(document).ready(function() {
                 pointToLayer: function(feature, latlng) {
                     const type = feature.properties['type2'] || "Unknown";
                     const color = getManagementStyle(type);
-                    return L.marker(latlng, { 
-                        icon: createDiamondIcon(color)
+                    return L.marker(latlng, {
+                        icon: createDiamondIcon(color),
+                        pane: 'managementPane'
                     });
                 },
                 onEachFeature: function(feature, layer) {
@@ -667,7 +856,9 @@ $(document).ready(function() {
         if (cameraTrapClusterGroup) {
             map.removeLayer(cameraTrapClusterGroup);
         }
-        cameraTrapClusterGroup = L.markerClusterGroup({ pane: 'cameraTrapPane' });
+        cameraTrapClusterGroup = L.markerClusterGroup({
+            clusterPane: 'cameraTrapPane'
+        });
 
         return $.get(`${API_BASE_URL}/api/cameratrap_points`, { year: selectedYear }).done(data => {
             if (!data || !data.features) {
@@ -688,8 +879,9 @@ $(document).ready(function() {
                 pointToLayer: function(feature, latlng) {
                     const month = feature.properties['monthout'] || "Unknown";
                     const color = getCameraTrapStyle(month);
-                    return L.marker(latlng, { 
-                        icon: createTriangleIcon(color)
+                    return L.marker(latlng, {
+                        icon: createTriangleIcon(color),
+                        pane: 'cameraTrapPane'
                     });
                 },
                 onEachFeature: function(feature, layer) {
@@ -909,145 +1101,206 @@ $(document).ready(function() {
         }
     }
 
-    function leafletLayerToTurfPolygon(layer) {
-        const latLngs = layer.getLatLngs()[0];
-        const ring = latLngs.map(latlng => [latlng.lng, latlng.lat]);
+    function createObservationClusterIcon(cluster) {
+        const recordTotal = cluster.getAllChildMarkers().reduce(
+            (total, marker) => total + Math.max(1, Number(marker.options.recordCount) || 1),
+            0
+        );
+        const sizeClass = recordTotal < 100
+            ? 'small'
+            : recordTotal < 1000
+                ? 'medium'
+                : 'large';
+        const exactTotal = recordTotal.toLocaleString();
+        const iconDiameter = exactTotal.length >= 7
+            ? 72
+            : exactTotal.length >= 6
+                ? 64
+                : exactTotal.length >= 5
+                    ? 54
+                    : 46;
+        const fontSize = exactTotal.length >= 7 ? 10 : 11;
 
-        if (ring.length > 0) {
-            const first = ring[0];
-            const last = ring[ring.length - 1];
-            if (first[0] !== last[0] || first[1] !== last[1]) {
-                ring.push([...first]);
-            }
+        return L.divIcon({
+            className: `observation-cluster observation-cluster-${sizeClass}`,
+            iconSize: L.point(iconDiameter, iconDiameter),
+            html: `<span style="--cluster-font-size: ${fontSize}px" title="${exactTotal} observation records">${exactTotal}</span>`
+        });
+    }
+
+    function observationClusterRadius(zoom) {
+        if (zoom <= 13) return 130;
+        if (zoom <= 15) return 110;
+        if (zoom <= 17) return 85;
+        return 65;
+    }
+
+    function renderPointBatch(data, startIndex, uniqueTaxa, renderToken, completion) {
+        if (renderToken !== mapRenderToken) {
+            completion.resolve();
+            return;
         }
 
-        return turf.polygon([ring]);
+        const endIndex = Math.min(startIndex + MAP_MARKER_BATCH_SIZE, data.length);
+        for (let index = startIndex; index < endIndex; index += 1) {
+            const point = data[index];
+            const taxa = point.taxa || 'Unknown';
+            const isAggregate = point.is_aggregate === true;
+            const markerRadius = isAggregate
+                ? Math.min(15, 7 + Math.log2(Math.max(1, point.record_count)))
+                : 8;
+            const marker = L.circleMarker([point.latitude, point.longitude], {
+                radius: markerRadius,
+                fillColor: taxaColors[taxa],
+                color: '#000',
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 0.8,
+                pane: 'markerPane',
+                recordCount: Math.max(1, Number(point.record_count) || 1)
+            });
+
+            const popupContent = isAggregate
+                ? `<b>${Number(point.record_count).toLocaleString()} records</b><br>${Number(point.unique_species).toLocaleString()} unique species<br><b>Taxa:</b> ${taxa}<br><small>Click to zoom in and view the underlying records.</small>`
+                : `<b>${point.english_name || 'N/A'}</b><br><i>${point.species || 'N/A'}</i><br><hr><b>Observer:</b> ${point.obs || 'N/A'}<br><b>Date:</b> ${point.Date ? new Date(point.Date).toLocaleDateString() : 'N/A'}<br><b>Taxa:</b> ${taxa}`;
+            marker.bindPopup(popupContent);
+            marker.on('click', () => {
+                if (isAggregate) {
+                    handleAggregateMapMarkerClick(point);
+                } else {
+                    handleMapMarkerClick(point.id);
+                }
+            });
+            taxaLayerGroups[taxa].addLayer(marker);
+            if (!isAggregate) markerLayers.individual[point.id] = marker;
+        }
+
+        if (endIndex < data.length) {
+            requestAnimationFrame(() => renderPointBatch(
+                data,
+                endIndex,
+                uniqueTaxa,
+                renderToken,
+                completion
+            ));
+            return;
+        }
+
+        finishSpeciesMap(uniqueTaxa);
+        completion.resolve();
     }
 
-    function getPolygonSelectionSummary(layer) {
-        const polygon = leafletLayerToTurfPolygon(layer);
-
-        const pointsInPolygon = currentMapData.filter(point => {
-            if (point.latitude == null || point.longitude == null) return false;
-            const turfPoint = turf.point([point.longitude, point.latitude]);
-            return turf.booleanPointInPolygon(turfPoint, polygon);
+    function finishSpeciesMap(uniqueTaxa) {
+        uniqueTaxa.forEach(taxa => {
+            if (taxaVisibilityState[taxa]) {
+                markerLayers.clusterGroup.addLayer(taxaLayerGroups[taxa]);
+            }
         });
 
-        const uniqueSpecies = new Set(
-            pointsInPolygon
-                .map(point => point.species)
-                .filter(Boolean)
-        );
+        map.addLayer(markerLayers.clusterGroup);
+        speciesBounds = markerLayers.clusterGroup.getBounds();
+        checkAndFitBounds();
 
-        return {
-            totalRecords: pointsInPolygon.length,
-            uniqueSpecies: uniqueSpecies.size,
-            pointsInPolygon
-        };
-    }
-
-    function showPolygonSummary(layer, summary) {
-        const popupContent = `
-            <div>
-                <b>Polygon Selection</b><br>
-                Unique species: ${summary.uniqueSpecies}<br>
-                Observation records: ${summary.totalRecords}
+        let legendContent = `
+            <div class="legend-accordion-header active" data-target="#species-content">
+                <span>Species</span><span class="arrow">▼</span>
             </div>
-        `;
-        layer.bindPopup(popupContent).openPopup();
+            <div class="legend-accordion-content show" id="species-content">
+                <div class="legend-controls">
+                    <a data-type="species" data-action="all">Select All</a>
+                    <a data-type="species" data-action="none">Deselect All</a>
+                </div>
+                <div class="legend-scroll-content">`;
+        uniqueTaxa.forEach(taxa => {
+            const isChecked = taxaVisibilityState[taxa] ? 'checked' : '';
+            legendContent += `<div class="legend-item">
+                <label>
+                    <input type="checkbox" data-type="species" data-name="${taxa}" ${isChecked}>
+                    <i class="legend-swatch" style="background:${taxaColors[taxa]}; border-radius: 50%;"></i>
+                    <span>${taxa}</span>
+                </label>
+            </div>`;
+        });
+        legendContent += '</div></div>';
+        $('#species-legend').html(legendContent);
     }
 
     function updateMap(filters) {
-        if (markerLayers.clusterGroup) {
-            map.removeLayer(markerLayers.clusterGroup);
-        }
-        markerLayers = { individual: {}, clusterGroup: L.markerClusterGroup({ pane: 'markerPane' }) };
+        mapRenderToken += 1;
+        const renderToken = mapRenderToken;
+        const completion = $.Deferred();
+
+        if (markerLayers.clusterGroup) map.removeLayer(markerLayers.clusterGroup);
+        markerLayers = {
+            individual: {},
+            clusterGroup: L.markerClusterGroup({
+                clusterPane: 'markerPane',
+                chunkedLoading: true,
+                iconCreateFunction: createObservationClusterIcon,
+                maxClusterRadius: observationClusterRadius,
+                disableClusteringAtZoom: 19,
+                showCoverageOnHover: false,
+                spiderfyOnMaxZoom: true,
+                zoomToBoundsOnClick: true
+            })
+        };
         taxaLayerGroups = {};
 
-        return $.get(`${API_BASE_URL}/api/map_data`, filters).done(data => {
-            currentMapData = data || [];
-            const speciesLegendDiv = $('#species-legend');
-            if (!data || data.length === 0) {
-                currentMapData = [];
-                speciesLegendDiv.html(`
-                    <div class="legend-accordion-header active" data-target="#species-content">
-                        <span>Species</span><span class="arrow">▼</span>
-                    </div>
-                    <div class="legend-accordion-content show" id="species-content">No species data for this selection.</div>`);
-                speciesBounds = null;
-                checkAndFitBounds();
-                return;
-            }
-
-            const uniqueTaxa = [...new Set(data.map(item => item.taxa || 'Unknown'))].sort();
-            
-            uniqueTaxa.forEach(taxa => {
-                taxaLayerGroups[taxa] = L.layerGroup();
-                if (taxaVisibilityState[taxa] === undefined) {
-                    taxaVisibilityState[taxa] = true;
+        $.get(`${API_BASE_URL}/api/map_data`, getMapDisplayFilters(filters))
+            .done(data => {
+                if (renderToken !== mapRenderToken) {
+                    completion.resolve();
+                    return;
                 }
-            });
 
-            taxaColors = uniqueTaxa.reduce((acc, taxa) => {
-                acc[taxa] = stringToColor(taxa);
-                return acc;
-            }, {});
+                currentMapData = data || [];
+                if (!currentMapData.length) {
+                    $('#species-legend').html(`
+                        <div class="legend-accordion-header active" data-target="#species-content">
+                            <span>Species</span><span class="arrow">▼</span>
+                        </div>
+                        <div class="legend-accordion-content show" id="species-content">No species data for this selection.</div>`);
+                    speciesBounds = null;
+                    checkAndFitBounds();
+                    completion.resolve();
+                    return;
+                }
 
-            data.forEach(point => {
-                const taxa = point.taxa || 'Unknown';
-                const marker = L.circleMarker([point.latitude, point.longitude], {
-                    radius: 8, fillColor: taxaColors[taxa], color: "#000",
-                    weight: 1, opacity: 1, fillOpacity: 0.8, pane: 'markerPane'
+                const uniqueTaxa = [...new Set(currentMapData.map(item => item.taxa || 'Unknown'))].sort();
+                uniqueTaxa.forEach(taxa => {
+                    taxaLayerGroups[taxa] = L.layerGroup();
+                    if (taxaVisibilityState[taxa] === undefined) taxaVisibilityState[taxa] = true;
                 });
+                taxaColors = uniqueTaxa.reduce((colors, taxa) => {
+                    colors[taxa] = stringToColor(taxa);
+                    return colors;
+                }, {});
 
-                const popupContent = `<b>${point.english_name || 'N/A'}</b><br><i>${point.species || 'N/A'}</i><br><hr><b>Observer:</b> ${point.obs || 'N/A'}<br><b>Date:</b> ${point.Date ? new Date(point.Date).toLocaleDateString() : 'N/A'}<br><b>Taxa:</b> ${taxa}`;
-                marker.bindPopup(popupContent);
-                marker.on('click', () => handleMapMarkerClick(point.id));
-                
-                taxaLayerGroups[taxa].addLayer(marker);
-                markerLayers.individual[point.id] = marker;
-            });
+                requestAnimationFrame(() => renderPointBatch(
+                    currentMapData,
+                    0,
+                    uniqueTaxa,
+                    renderToken,
+                    completion
+                ));
+            })
+            .fail(error => completion.reject(error));
 
-            uniqueTaxa.forEach(taxa => {
-                if (taxaVisibilityState[taxa]) {
-                    markerLayers.clusterGroup.addLayer(taxaLayerGroups[taxa]);
-                }
-            });
+        return completion.promise();
+    }
 
-            map.addLayer(markerLayers.clusterGroup);
-            speciesBounds = markerLayers.clusterGroup.getBounds();
-            checkAndFitBounds();
-
-            let legendContent = `
-                <div class="legend-accordion-header active" data-target="#species-content">
-                    <span>Species</span><span class="arrow">▼</span>
-                </div>
-                <div class="legend-accordion-content show" id="species-content">
-                    <div class="legend-controls">
-                        <a data-type="species" data-action="all">Select All</a>
-                        <a data-type="species" data-action="none">Deselect All</a>
-                    </div>
-                    <div class="legend-scroll-content">`;
-            uniqueTaxa.forEach(taxa => {
-                const isChecked = taxaVisibilityState[taxa] ? 'checked' : '';
-                legendContent += `<div class="legend-item">
-                    <label>
-                        <input type="checkbox" data-type="species" data-name="${taxa}" ${isChecked}>
-                        <i class="legend-swatch" style="background:${taxaColors[taxa]}; border-radius: 50%;"></i>
-                        <span>${taxa}</span>
-                    </label>
-                </div>`;
-            });
-            legendContent += '</div></div>';
-            speciesLegendDiv.html(legendContent);
-        });
+    function getMapDisplayFilters(filters) {
+        const mapFilters = { ...filters };
+        delete mapFilters.bbox;
+        if (mapDrilldownBbox) mapFilters.bbox = mapDrilldownBbox;
+        return mapFilters;
     }
 
     function handleClearFilters() {
         if (isUpdatingFilters) return;
         isInitialLoad = true;
-        geographicFilter = null;
-        drawnItems.clearLayers();
+        mapDrilldownBbox = null;
+        clearAreaFilter(false);
         taxaVisibilityState = {};
         habitatVisibilityState = {};
         $('.legend-item input[type="checkbox"]').prop('checked', true);
@@ -1057,8 +1310,12 @@ $(document).ready(function() {
 
     function handleFilterChange() {
         if (isUpdatingFilters) return;
-        isInitialLoad = false;
-        updateFilterOptions().then(updateAllDashboardComponents);
+        mapDrilldownBbox = null;
+        clearTimeout(filterUpdateTimer);
+        filterUpdateTimer = setTimeout(() => {
+            isInitialLoad = false;
+            updateFilterOptions().then(updateAllDashboardComponents);
+        }, 250);
     }
 
     function updateFilterOptions() {
@@ -1104,18 +1361,27 @@ $(document).ready(function() {
         return filters;
     }
 
-    function updateAllDashboardComponents() {
+    function updateAllDashboardComponents({ refreshMap = true } = {}) {
         const filters = getActiveFilters();
+        const updateToken = ++dashboardUpdateToken;
         setLoadingState(true);
-        const requests = [
+
+        const primaryRequests = [
             loadTable(filters, 1),
-            updateSummaryStats(filters),
-            updateMap(filters),
-            updateSpeciesDistributionChart(filters),
-            updateObserverChart(filters),
-            updateTemporalChart(filters)
+            updateSummaryStats(filters)
         ];
-        return $.when(...requests).always(() => setLoadingState(false));
+        if (refreshMap) primaryRequests.push(updateMap(filters));
+        const primaryResult = $.when(...primaryRequests)
+            .always(() => setLoadingState(false));
+
+        setTimeout(() => {
+            if (updateToken !== dashboardUpdateToken) return;
+            updateSpeciesDistributionChart(filters);
+            updateTemporalChart(filters);
+            updateObserverChart(filters);
+        }, 100);
+
+        return primaryResult;
     }
 
     function setLoadingState(isLoading) {
@@ -1189,6 +1455,21 @@ $(document).ready(function() {
                 }
             })
             .fail(() => alert('Could not find the corresponding record in the table.'));
+    }
+
+    function handleAggregateMapMarkerClick(point) {
+        const bounds = L.latLngBounds([
+            [point.bbox_south, point.bbox_west],
+            [point.bbox_north, point.bbox_east]
+        ]);
+        mapDrilldownBbox = [
+            point.bbox_west,
+            point.bbox_south,
+            point.bbox_east,
+            point.bbox_north
+        ].join(',');
+        map.fitBounds(bounds, { maxZoom: 18, padding: [25, 25] });
+        updateMap(getActiveFilters());
     }
 
     function updatePagination(totalPages, page, filters) {
