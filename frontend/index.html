@@ -308,10 +308,7 @@
     <div class="card" style="padding: 0;">
         <div class="map-controls">
             <label for="habitat-year-filter">Habitat Year:</label>
-            <select id="habitat-year-filter">
-                <option value="2024-25" selected>2024-25</option>
-                <option value="2023-24">2023-24</option>
-            </select>
+            <select id="habitat-year-filter"></select>
             <label for="management-year-filter">Management Year:</label>
             <select id="management-year-filter"></select>
             <label for="cameratrap-year-filter">Camera Trap Year:</label>
@@ -505,8 +502,14 @@ $(document).ready(function() {
         setTimeout(initializeManagementFilter, 600);
         setTimeout(initializeCameraTrapFilter, 750);
 
-        loadHabitatLayer().then(() => {
-            $.when(initialUpdatePromise).done(checkAndFitBounds);
+        initializeHabitatFilter().always(() => {
+            if ($('#habitat-year-filter').val()) {
+                loadHabitatLayer().then(() => {
+                    $.when(initialUpdatePromise).done(checkAndFitBounds);
+                });
+            } else {
+                $.when(initialUpdatePromise).done(checkAndFitBounds);
+            }
         });
     }
 
@@ -687,6 +690,24 @@ $(document).ready(function() {
                 map.fitBounds(habitatBounds.pad(0.1));
             }
         }
+    }
+
+    function initializeHabitatFilter() {
+        return $.get(`${API_BASE_URL}/api/habitat_years`).done(years => {
+            const filter = $('#habitat-year-filter');
+            filter.empty();
+            if (years && years.length > 0) {
+                years.forEach(year => {
+                    filter.append(new Option(year, year));
+                });
+            } else {
+                filter.append(new Option('No Data', ''));
+            }
+        }).fail(() => {
+            const filter = $('#habitat-year-filter');
+            filter.empty().append(new Option('Unavailable', ''));
+            console.error('Could not load available habitat years.');
+        });
     }
 
     function initializeManagementFilter() {

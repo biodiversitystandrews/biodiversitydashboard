@@ -545,10 +545,7 @@
     <div class="card controls">
         <div class="control-group">
             <label for="habitat-year-filter">Habitat Year</label>
-            <select id="habitat-year-filter">
-                <option value="2024-25" selected>2024-25</option>
-                <option value="2023-24">2023-24</option>
-            </select>
+            <select id="habitat-year-filter"></select>
         </div>
         <div class="control-group">
             <label for="comparison-count">Random Comparisons</label>
@@ -740,12 +737,36 @@ $(document).ready(function() {
         setLoadingState("Loading map data...");
         hotspotDataReady = loadHotspotData();
 
-        $.when(loadHabitatLayer(), loadEstateBoundary(), loadMapData())
+        $.when(
+            initializeHabitatFilter().then(() => loadHabitatLayer()),
+            loadEstateBoundary(),
+            loadMapData()
+        )
             .done(() => {
                 initializePolygonWorker();
                 setEmptyState();
             })
             .fail(() => setErrorState("Could not load the map data. Check that the API server is running and the data files exist."));
+    }
+
+    function initializeHabitatFilter() {
+        return $.get(`${API_BASE_URL}/api/habitat_years`).then(years => {
+            const filter = $('#habitat-year-filter');
+            filter.empty();
+            if (!years || years.length === 0) {
+                filter.append(new Option('No Data', ''));
+                return $.Deferred().reject('No habitat years are available').promise();
+            }
+            years.forEach(year => {
+                filter.append(new Option(year, year));
+            });
+            return years;
+        }, () => {
+            $('#habitat-year-filter')
+                .empty()
+                .append(new Option('Unavailable', ''));
+            return $.Deferred().reject('Could not load habitat years').promise();
+        });
     }
 
     function bindEvents() {

@@ -301,8 +301,25 @@ def get_cameratrap_points(year: str):
         f"Camera trap data for year {year} not found.",
     )
 
+@app.get("/api/habitat_years")
+def get_habitat_years():
+    """Return the habitat years currently available as annual GeoJSON files."""
+    years = []
+    pattern = re.compile(r"habitats_(\d{4}-\d{2})\.geojson")
+    for habitat_file in DATA_PATH.glob("habitats_*.geojson"):
+        match = pattern.fullmatch(habitat_file.name)
+        if match:
+            years.append(match.group(1))
+    return sorted(set(years), reverse=True)
+
+
 @app.get("/api/habitat_polygons")
-def get_habitat_polygons(year: Optional[str] = "2024-25"):
+def get_habitat_polygons(year: str):
+    if not re.fullmatch(r"\d{4}-\d{2}", year):
+        raise HTTPException(
+            status_code=400,
+            detail="Habitat year must use the YYYY-YY format.",
+        )
     return static_json_response(
         f"habitats_{year}.geojson",
         f"Habitat data for year {year} not found.",

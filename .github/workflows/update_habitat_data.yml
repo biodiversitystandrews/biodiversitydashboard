@@ -42,16 +42,16 @@ jobs:
         run: python download_from_gdrive.py "${{ github.event.client_payload.file_id }}" "habitat-data.gpkg"
       
       - name: Run habitat conversion script
-        run: python habitatgpkgconversiontogeojson.py habitat-data.gpkg data/habitats.geojson
+        run: python habitatgpkgconversiontogeojson.py habitat-data.gpkg data
 
       - name: Commit and push if there are changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add data/habitats.geojson
+          git add data/habitats_*.geojson
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "Feat: Update habitat GeoJSON data"
+            git commit -m "Feat: Update annual habitat GeoJSON data"
             git push
           fi
