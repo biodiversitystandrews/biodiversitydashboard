@@ -6,11 +6,74 @@ from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
+from shapely.geometry import MultiPolygon, Polygon
+from shapely.ops import unary_union
+
+try:
+    from shapely import make_valid
+except ImportError:
+    from shapely.validation import make_valid
 
 
 # Accepted alternatives for the ecological/survey year column.
 YEAR_COLUMN_NAMES = ("year", "school_year", "survey_year", "sampling_year", "samp_year")
 YEAR_PATTERN = re.compile(r"^(?P<start>\d{4})\s*[-_/]\s*(?P<end>\d{2}|\d{4})$")
+
+
+def polygon_parts(geometry):
+    """Return every polygon contained in a polygonal or collection geometry."""
+    if isinstance(geometry, Polygon):
+        return [geometry]
+    if isinstance(geometry, MultiPolygon) or hasattr(geometry, "geoms"):
+        parts = []
+        for child in geometry.geoms:
+            parts.extend(polygon_parts(child))
+        return parts
+    return []
+
+
+def repair_habitat_geometry(geometry):
+    """Repair one habitat geometry and retain only its polygonal components."""
+    if geometry is None or geometry.is_empty:
+        return None
+
+    repaired = make_valid(geometry) if not geometry.is_valid else geometry
+    parts = polygon_parts(repaired)
+    if not parts:
+        return None
+
+    polygon = parts[0] if len(parts) == 1 else unary_union(parts)
+    if not polygon.is_valid:
+        polygon = polygon.buffer(0)
+    return None if polygon.is_empty else polygon
+
+
+def clean_habitat_geometries(gdf):
+    """Remove empty locations and repair invalid habitat polygons."""
+    missing_count = int(gdf.geometry.isna().sum())
+    non_missing = gdf[gdf.geometry.notna()].copy()
+    empty_count = int(non_missing.geometry.is_empty.sum())
+    non_empty = non_missing[~non_missing.geometry.is_empty].copy()
+    invalid_count = int((~non_empty.geometry.is_valid).sum())
+
+    non_empty["geometry"] = non_empty.geometry.map(repair_habitat_geometry)
+    unusable_count = int(non_empty.geometry.isna().sum())
+    cleaned = non_empty[non_empty.geometry.notna()].copy()
+
+    if missing_count or empty_count:
+        print(
+            "Warning: removed "
+            f"{missing_count} missing and {empty_count} empty habitat geometries."
+        )
+    if invalid_count:
+        print(f"Repaired {invalid_count} invalid habitat geometries.")
+    if unusable_count:
+        print(
+            f"Warning: removed {unusable_count} non-polygonal or unrepairable geometries."
+        )
+    if cleaned.empty:
+        raise ValueError("No usable habitat polygon geometries remain.")
+    return cleaned
 
 
 def normalise_column_name(name):
@@ -65,7 +128,7 @@ def read_habitats(input_path):
         gdf = gdf.set_crs("EPSG:4326")
     else:
         gdf = gdf.to_crs("EPSG:4326")
-    return gdf
+    return clean_habitat_geometries(gdf)
 
 
 def convert_all_years(input_gpkg_path, output_directory):

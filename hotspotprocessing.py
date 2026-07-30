@@ -13,7 +13,13 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from shapely.geometry import box
+from shapely.geometry import MultiPolygon, Polygon, box
+from shapely.ops import unary_union
+
+try:
+    from shapely import make_valid
+except ImportError:
+    from shapely.validation import make_valid
 
 from dashboard_standardisation import standardise_date_series
 
@@ -24,6 +30,34 @@ DEFAULT_DATA_DIR = Path(__file__).parent / "data"
 DEFAULT_BIODIVERSITY_OUTPUT = DEFAULT_DATA_DIR / "biodiversity_hotspots.geojson"
 DEFAULT_EFFORT_OUTPUT = DEFAULT_DATA_DIR / "survey_effort_hotspots.geojson"
 DEFAULT_BOUNDARY_OUTPUT = DEFAULT_DATA_DIR / "university_estate_boundary.geojson"
+
+
+def polygon_parts(geometry):
+    """Return every polygon contained in a polygonal or collection geometry."""
+    if isinstance(geometry, Polygon):
+        return [geometry]
+    if isinstance(geometry, MultiPolygon) or hasattr(geometry, "geoms"):
+        parts = []
+        for child in geometry.geoms:
+            parts.extend(polygon_parts(child))
+        return parts
+    return []
+
+
+def repair_boundary_geometry(geometry):
+    """Repair one boundary feature and discard non-polygonal components."""
+    if geometry is None or geometry.is_empty:
+        return None
+
+    repaired = make_valid(geometry) if not geometry.is_valid else geometry
+    parts = polygon_parts(repaired)
+    if not parts:
+        return None
+
+    polygon = parts[0] if len(parts) == 1 else unary_union(parts)
+    if not polygon.is_valid:
+        polygon = polygon.buffer(0)
+    return None if polygon.is_empty else polygon
 
 
 def parse_arguments():
@@ -136,7 +170,8 @@ def load_boundary(boundary_path, data_dir):
         print(f"Using habitat estate boundary: {selected_path.name}")
 
     boundary = gpd.read_file(selected_path)
-    boundary = boundary[boundary.geometry.notna() & ~boundary.geometry.is_empty].copy()
+    boundary = boundary[boundary.geometry.notna()].copy()
+    boundary = boundary[~boundary.geometry.is_empty].copy()
     if boundary.empty:
         raise ValueError(f"Boundary file contains no usable geometry: {selected_path}")
 
@@ -145,8 +180,21 @@ def load_boundary(boundary_path, data_dir):
         boundary = boundary.set_crs(WGS84)
 
     boundary = boundary.to_crs(BRITISH_NATIONAL_GRID)
+    invalid_count = int((~boundary.geometry.is_valid).sum())
+    boundary["geometry"] = boundary.geometry.map(repair_boundary_geometry)
+    boundary = boundary[boundary.geometry.notna()].copy()
+    if boundary.empty:
+        raise ValueError(
+            f"Boundary file contains no repairable polygon geometry: {selected_path}"
+        )
+    if invalid_count:
+        print(f"Repaired {invalid_count} invalid boundary geometries.")
+
     if hasattr(boundary.geometry, "union_all"):
-        boundary_geometry = boundary.geometry.union_all()
+        try:
+            boundary_geometry = boundary.geometry.union_all(grid_size=0.01)
+        except TypeError:
+            boundary_geometry = boundary.geometry.union_all()
     else:
         boundary_geometry = boundary.geometry.unary_union
 
