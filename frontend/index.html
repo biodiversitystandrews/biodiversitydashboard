@@ -50,7 +50,52 @@
         .stat-card { text-align: center; }
         .stat-card h4 { margin: 0 0 0.5em 0; color: var(--secondary-color); font-weight: normal; }
         .stat-card p { margin: 0; font-size: 2em; font-weight: bold; color: var(--primary-color); }
-        .table-wrapper { width: 100%; overflow-x: auto; }
+        .table-wrapper {
+            width: 100%;
+            max-width: 100%;
+            overflow-x: auto;
+            box-sizing: border-box;
+            -webkit-overflow-scrolling: touch;
+        }
+        /* The habitat table grows by five columns for every year. Keep that
+           width inside its own scroll region so an embedded WordPress iframe
+           cannot crop the newest year's columns or place them under its bar. */
+        #habitat-summary-container { overflow: hidden; }
+        #habitat-summary-container .table-wrapper {
+            max-height: min(70vh, 720px);
+            overflow: auto;
+            scrollbar-gutter: stable;
+        }
+        #habitat-summary-table {
+            width: max-content;
+            min-width: 100%;
+        }
+        #habitat-summary-table th,
+        #habitat-summary-table td {
+            min-width: 84px;
+            box-sizing: border-box;
+        }
+        #habitat-summary-table th:first-child,
+        #habitat-summary-table td:first-child {
+            position: sticky;
+            left: 0;
+            min-width: 118px;
+            max-width: 150px;
+            background: #fff;
+            z-index: 2;
+        }
+        #habitat-summary-table thead th {
+            position: sticky;
+            top: 0;
+            background: var(--light-gray);
+            z-index: 3;
+        }
+        #habitat-summary-table thead tr:nth-child(2) th { top: 49px; }
+        #habitat-summary-table thead th:first-child { z-index: 5; }
+        #habitat-summary-table tbody tr:last-child td { background: var(--light-gray); }
+        @media (max-width: 700px) {
+            #habitat-summary-container .table-wrapper { padding: 0.75em !important; }
+        }
         table { border-collapse: collapse; width: 100%; font-size: 0.9em; }
         th, td { border: 1px solid var(--border-color); padding: 10px; text-align: left; }
         th { background-color: var(--light-gray); text-align: center; }

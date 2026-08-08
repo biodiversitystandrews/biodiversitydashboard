@@ -3,6 +3,12 @@ name: Update 2023 Parquet Data from Google Drive
 on:
   repository_dispatch:
     types: [new-2023-gpkg-file]
+  workflow_dispatch:
+    inputs:
+      file_id:
+        description: Google Drive file ID of the 2023 observation GPKG
+        required: true
+        type: string
 
 concurrency:
   group: dashboard-generated-data-writes
@@ -39,7 +45,7 @@ jobs:
         run: echo '${{ secrets.GDRIVE_CREDENTIALS_DATA }}' > gdrive-credentials.json
 
       - name: Download .gpkg file from Google Drive (service account)
-        run: python download_from_gdrive.py "${{ github.event.client_payload.file_id }}" "data-2023.gpkg"
+        run: python download_from_gdrive.py "${{ github.event.client_payload.file_id || inputs.file_id }}" "data-2023.gpkg"
 
       - name: Run 2023 data conversion script
 

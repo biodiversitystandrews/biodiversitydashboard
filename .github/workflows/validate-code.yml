@@ -41,6 +41,9 @@ jobs:
       - name: Compile Python
         run: python -m compileall -q .
 
+      - name: Check Google Drive workflow contracts
+        run: python scripts/check_workflow_contracts.py
+
       - name: Run regression tests
         run: python -m unittest discover -s tests -v
 

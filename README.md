@@ -1,6 +1,6 @@
 # University of St Andrews Biodiversity Dashboard
 
-New maintainers should read [`docs/maintenance-handbook.md`](docs/maintenance-handbook.md) before changing data contracts, workflows, annual file handling, or generated outputs.
+New maintainers should read [`docs/maintenance-handbook.md`](docs/maintenance-handbook.md) before changing data contracts, workflows, annual file handling, or generated outputs. First-time credential and automation setup is documented in [`docs/google-drive-workflows-setup.md`](docs/google-drive-workflows-setup.md).
 
 This repository contains the data-processing pipeline, API, and browser-based dashboard used to display biodiversity records collected across the University of St Andrews estate.
 
@@ -16,7 +16,7 @@ The system has three main responsibilities:
 .
 |-- .github/workflows/           GitHub Actions data-processing workflows
 |-- data/                        Generated Parquet, GeoJSON, and JSON dashboard data
-|-- docs/                        Maintenance handbook and University server specification
+|-- docs/                        Maintenance, workflow setup, and server documentation
 |-- frontend/
 |   |-- dashboard-config.js      Shared API deployment URL
 |   |-- index.html               Main public dashboard

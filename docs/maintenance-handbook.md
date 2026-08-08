@@ -4,6 +4,8 @@
 
 This handbook is for future maintainers, including students who may be new to Python, JavaScript, GIS, GitHub Actions, or deployment. Start here before changing a converter or workflow. The README explains how to run the system; this document explains why the parts are arranged as they are and what can go wrong.
 
+For first-time Google Cloud keys, GitHub secrets, Apps Script timers, manual workflow runs, and credential rotation, follow [`google-drive-workflows-setup.md`](google-drive-workflows-setup.md).
+
 ## System in One Paragraph
 
 Staff place source files in Google Drive. A time-triggered Google Apps Script sends the Drive file ID to GitHub using a `repository_dispatch` event. A matching GitHub Actions workflow downloads the file, runs one conversion script, and commits generated Parquet, GeoJSON, or JSON files. Render restarts the FastAPI service from `main.py`, while Netlify serves the static files under `frontend/`. The WordPress page embeds that frontend.
