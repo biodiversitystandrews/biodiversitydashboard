@@ -77,21 +77,12 @@
         }
         #habitat-summary-table th:first-child,
         #habitat-summary-table td:first-child {
-            position: sticky;
-            left: 0;
             min-width: 118px;
             max-width: 150px;
-            background: #fff;
-            z-index: 2;
         }
         #habitat-summary-table thead th {
-            position: sticky;
-            top: 0;
             background: var(--light-gray);
-            z-index: 3;
         }
-        #habitat-summary-table thead tr:nth-child(2) th { top: 49px; }
-        #habitat-summary-table thead th:first-child { z-index: 5; }
         #habitat-summary-table tbody tr:last-child td { background: var(--light-gray); }
         @media (max-width: 700px) {
             #habitat-summary-container .table-wrapper { padding: 0.75em !important; }
@@ -1089,9 +1080,11 @@ $(document).ready(function() {
     }
 
     function formatBiomscore(value) {
-        if (value == null || value === '') return 'N/A';
+        if (value == null || value === '') return '&mdash;';
         const score = Number(value);
-        return Number.isFinite(score) ? score.toFixed(2) : 'N/A';
+        // Individual source scores are integer categories from 0 to 3, but the
+        // requested habitat-level arithmetic mean can legitimately be decimal.
+        return Number.isFinite(score) ? score.toFixed(2) : '&mdash;';
     }
 
     function updateHabitatLegend(classifications) {

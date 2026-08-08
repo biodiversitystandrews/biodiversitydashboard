@@ -11,7 +11,9 @@ from habitatmanagementgpkgconversion import normalise_sampling_year
 from habitatsummaryprocessing import (
     build_polygon_summary,
     calculate_polygon_areas,
+    normalise_sampling_years,
     parse_biomscore,
+    validate_square_year_coverage,
     validate_output,
 )
 
@@ -33,6 +35,41 @@ class AnnualLayerTests(unittest.TestCase):
         self.assertEqual(result.iloc[:3].tolist(), [0.0, 1.0, 3.0])
         self.assertTrue(pd.isna(result.iloc[3]))
         self.assertTrue(pd.isna(result.iloc[4]))
+
+    def test_habitat_biomscore_is_mean_of_parsed_integer_scores(self):
+        """Labelled source categories must be parsed before their mean is calculated."""
+        polygons = gpd.GeoDataFrame(
+            {
+                "year": ["2025-26", "2025-26"],
+                "broad": ["woodland", "woodland"],
+                "biomscore": ["1 - Low", "3 - High"],
+            },
+            geometry=[
+                box(-2.80, 56.33, -2.799, 56.331),
+                box(-2.799, 56.33, -2.798, 56.331),
+            ],
+            crs="EPSG:4326",
+        )
+
+        summary, year_scores = build_polygon_summary(polygons)
+
+        self.assertAlmostEqual(summary.loc[0, "biomscore"], 2.0)
+        self.assertAlmostEqual(year_scores["2025-26"], 2.0)
+
+    def test_habitat_summary_normalises_year_formats(self):
+        result = normalise_sampling_years(
+            pd.Series(["2025-26", "2025/2026"]),
+            "test data",
+        )
+        self.assertEqual(result.tolist(), ["2025-26", "2025-26"])
+
+    def test_missing_square_year_stops_summary_generation(self):
+        polygon_summary = pd.DataFrame({"year": ["2024-25", "2025-26"]})
+        square_summary = pd.DataFrame(
+            {"year": ["2024-25"], "no10msquares": [100]}
+        )
+        with self.assertRaisesRegex(ValueError, "2025-26"):
+            validate_square_year_coverage(polygon_summary, square_summary)
 
     def test_geographic_polygons_are_projected_before_area_calculation(self):
         """EPSG:4326 geometry must produce real square metres, not square degrees."""

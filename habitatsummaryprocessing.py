@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import geopandas as gpd
@@ -13,6 +14,7 @@ AREA_CRS = "EPSG:27700"
 SUMMARY_SCHEMA_VERSION = 2
 REQUIRED_POLYGON_COLUMNS = {"year", "broad", "biomscore"}
 REQUIRED_SQUARE_COLUMNS = {"year", "broad"}
+SAMPLING_YEAR_PATTERN = re.compile(r"^\s*(\d{4})\s*[-/]\s*(\d{2}|\d{4})\s*$")
 
 
 def require_columns(frame, required, label):
@@ -26,6 +28,40 @@ def clean_text(series, missing_value="Unknown"):
     """Strip text labels and replace empty or null values with a display-safe label."""
     cleaned = series.astype("string").str.strip()
     return cleaned.mask(cleaned.isna() | cleaned.eq(""), missing_value)
+
+
+def normalise_sampling_years(series, label):
+    """Normalise annual labels to YYYY-YY and reject ambiguous values.
+
+    Both `2025-26` and `2025/2026` are accepted. A habitat summary must not
+    create separate columns merely because two source files format the same
+    sampling year differently.
+    """
+    normalised = pd.Series(pd.NA, index=series.index, dtype="string")
+    invalid_values = []
+    for index, value in series.items():
+        if pd.isna(value) or not str(value).strip():
+            invalid_values.append("<missing>")
+            continue
+        match = SAMPLING_YEAR_PATTERN.fullmatch(str(value))
+        if not match:
+            invalid_values.append(str(value))
+            continue
+        start = int(match.group(1))
+        end_text = match.group(2)
+        end = int(end_text) if len(end_text) == 4 else (start // 100) * 100 + int(end_text)
+        if end != start + 1:
+            invalid_values.append(str(value))
+            continue
+        normalised.at[index] = f"{start}-{end % 100:02d}"
+
+    if invalid_values:
+        examples = sorted(set(invalid_values))[:5]
+        raise ValueError(
+            f"{label} contains {len(invalid_values)} missing or invalid sampling "
+            f"year value(s): {examples}. Expected YYYY-YY or YYYY/YYYY."
+        )
+    return normalised
 
 
 def parse_biomscore(series):
@@ -127,7 +163,7 @@ def build_polygon_summary(gdf):
     """Summarise habitat area and mean Biomscore for each habitat and year."""
     require_columns(gdf, REQUIRED_POLYGON_COLUMNS, "Habitat polygon file")
     gdf = gdf.copy()
-    gdf["year"] = clean_text(gdf["year"], "Unknown year")
+    gdf["year"] = normalise_sampling_years(gdf["year"], "Habitat polygon file")
     gdf["broad"] = clean_text(gdf["broad"])
     gdf["area_m2"] = calculate_polygon_areas(gdf)
     validate_year_area_totals(gdf)
@@ -154,13 +190,29 @@ def build_square_summary(gdf):
     """Count surveyed 10 m squares for each habitat and year."""
     require_columns(gdf, REQUIRED_SQUARE_COLUMNS, "10 m square file")
     data = pd.DataFrame(gdf.drop(columns="geometry", errors="ignore"))
-    data["year"] = clean_text(data["year"], "Unknown year")
+    data["year"] = normalise_sampling_years(data["year"], "10 m square file")
     data["broad"] = clean_text(data["broad"])
     summary = data.groupby(["year", "broad"], dropna=False).size().reset_index(name="no10msquares")
     totals = summary.groupby("year")["no10msquares"].sum().rename("total_year_squares")
     summary = summary.merge(totals, on="year", how="left")
     summary["percent_squares"] = summary["no10msquares"] / summary["total_year_squares"] * 100
     return summary
+
+
+def validate_square_year_coverage(poly_summary, square_summary):
+    """Require square data for every year represented by habitat polygons."""
+    polygon_years = set(poly_summary["year"].dropna())
+    square_totals = square_summary.groupby("year")["no10msquares"].sum()
+    missing = sorted(
+        year for year in polygon_years
+        if year not in square_totals.index or square_totals.get(year, 0) <= 0
+    )
+    if missing:
+        raise ValueError(
+            "10 m square file contains no square records for habitat year(s): "
+            f"{', '.join(missing)}. Upload an updated 10 m square file; these "
+            "values must not be silently displayed as zero."
+        )
 
 
 def create_output(poly_summary, square_summary, year_scores):
@@ -263,6 +315,7 @@ def process_habitat_data(polygons_path, squares_path, output_path):
     print(f"Loaded {len(polygons):,} habitat polygons and {len(squares):,} 10 m squares.")
     polygon_summary, year_scores = build_polygon_summary(polygons)
     square_summary = build_square_summary(squares)
+    validate_square_year_coverage(polygon_summary, square_summary)
     output = create_output(polygon_summary, square_summary, year_scores)
     validate_output(output)
 
