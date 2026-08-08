@@ -1,25 +1,33 @@
 {
     "years": [
         "2023-24",
-        "2024-25"
+        "2024-25",
+        "2025-26"
     ],
     "habitats": [
         {
             "name": "arable margins",
             "metrics": {
                 "2023-24": {
-                    "areaha": 1.3813007928649401,
-                    "percent_area": 0.3923960365736383,
-                    "biomscore": 13.8130079286494,
+                    "areaha": 6.174752946292768e-11,
+                    "percent_area": 0.39223183500671466,
+                    "biomscore": 6.174752946292768e-10,
                     "no10msquares": 252,
                     "percent_squares": 0.45158053186151526
                 },
                 "2024-25": {
-                    "areaha": 1.3813007928649401,
-                    "percent_area": 0.39144040906386113,
-                    "biomscore": 13.8130079286494,
+                    "areaha": 6.174752946292768e-11,
+                    "percent_area": 0.39127668510737185,
+                    "biomscore": 6.174752946292768e-10,
                     "no10msquares": 252,
                     "percent_squares": 0.4448995445076092
+                },
+                "2025-26": {
+                    "areaha": 1.5653532994661428e-11,
+                    "percent_area": 0.09532693799763743,
+                    "biomscore": 1.565353299466143e-10,
+                    "no10msquares": 0,
+                    "percent_squares": 0.0
                 }
             }
         },
@@ -27,18 +35,25 @@
             "name": "buildings",
             "metrics": {
                 "2023-24": {
-                    "areaha": 53.551924840326954,
-                    "percent_area": 15.212879893198117,
-                    "biomscore": 535.5192484032696,
+                    "areaha": 2.3951281108765573e-09,
+                    "percent_area": 15.214300914975185,
+                    "biomscore": 2.3951281108765573e-08,
                     "no10msquares": 8574,
                     "percent_squares": 15.364490000716794
                 },
                 "2024-25": {
-                    "areaha": 53.11889339784603,
-                    "percent_area": 15.053116213410842,
-                    "biomscore": 529.510200912693,
+                    "areaha": 2.375758949887764e-09,
+                    "percent_area": 15.0545146439318,
+                    "biomscore": 2.3682500664218717e-08,
                     "no10msquares": 8490,
                     "percent_squares": 14.988877511387312
+                },
+                "2025-26": {
+                    "areaha": 2.44105365606708e-09,
+                    "percent_area": 14.865536783304664,
+                    "biomscore": 2.9190626965349074e-09,
+                    "no10msquares": 0,
+                    "percent_squares": 0.0
                 }
             }
         },
@@ -46,18 +61,25 @@
             "name": "freshwater",
             "metrics": {
                 "2023-24": {
-                    "areaha": 10.060477533227447,
-                    "percent_area": 2.857952106064257,
-                    "biomscore": 100.60477533227447,
+                    "areaha": 4.497676125014877e-10,
+                    "percent_area": 2.857007843268667,
+                    "biomscore": 4.497676125014877e-09,
                     "no10msquares": 1541,
                     "percent_squares": 2.761450792057917
                 },
                 "2024-25": {
-                    "areaha": 10.060477533227447,
-                    "percent_area": 2.8509919499983893,
-                    "biomscore": 100.60477533227447,
+                    "areaha": 4.497676125014877e-10,
+                    "percent_area": 2.8500505529358384,
+                    "biomscore": 4.497676125014877e-09,
                     "no10msquares": 1541,
                     "percent_squares": 2.7205960241516896
+                },
+                "2025-26": {
+                    "areaha": 4.603560410139273e-10,
+                    "percent_area": 2.80347777038826,
+                    "biomscore": 5.251146592422772e-09,
+                    "no10msquares": 0,
+                    "percent_squares": 0.0
                 }
             }
         },
@@ -65,18 +87,25 @@
             "name": "garden",
             "metrics": {
                 "2023-24": {
-                    "areaha": 13.613261822983462,
-                    "percent_area": 3.8672170549461473,
-                    "biomscore": 136.13261822983463,
+                    "areaha": 6.087101507546727e-10,
+                    "percent_area": 3.8666405197808675,
+                    "biomscore": 6.087101507546726e-09,
                     "no10msquares": 3074,
                     "percent_squares": 5.508565694215468
                 },
                 "2024-25": {
-                    "areaha": 11.41352782860519,
-                    "percent_area": 3.2344265819355247,
-                    "biomscore": 114.13527828605189,
+                    "areaha": 5.103808204772158e-10,
+                    "percent_area": 3.23413936258944,
+                    "biomscore": 5.103808204772158e-09,
                     "no10msquares": 2682,
                     "percent_squares": 4.735002295116698
+                },
+                "2025-26": {
+                    "areaha": 5.152034191650079e-10,
+                    "percent_area": 3.1374875187386264,
+                    "biomscore": 3.908601412144617e-09,
+                    "no10msquares": 0,
+                    "percent_squares": 0.0
                 }
             }
         },
@@ -84,18 +113,25 @@
             "name": "hedge",
             "metrics": {
                 "2023-24": {
-                    "areaha": 5.1371468211971045,
-                    "percent_area": 1.4593461918990644,
-                    "biomscore": 51.37146821197105,
+                    "areaha": 2.2975618401333478e-10,
+                    "percent_area": 1.459454174823238,
+                    "biomscore": 2.2975618401333477e-09,
                     "no10msquares": 1972,
                     "percent_squares": 3.5337968604401118
                 },
                 "2024-25": {
-                    "areaha": 6.529050730051219,
-                    "percent_area": 1.8502373283006166,
-                    "biomscore": 92.41553841547427,
+                    "areaha": 2.919993672903321e-10,
+                    "percent_area": 1.8503176642137016,
+                    "biomscore": 4.132963175979061e-09,
                     "no10msquares": 2366,
                     "percent_squares": 4.17711239009922
+                },
+                "2025-26": {
+                    "areaha": 3.461374586936925e-10,
+                    "percent_area": 2.1079090627532224,
+                    "biomscore": 5.662298851102967e-09,
+                    "no10msquares": 0,
+                    "percent_squares": 0.0
                 }
             }
         },
@@ -103,18 +139,25 @@
             "name": "intertidal mudflat",
             "metrics": {
                 "2023-24": {
-                    "areaha": 14.914228789162689,
-                    "percent_area": 4.236792084424809,
-                    "biomscore": 149.1422878916269,
+                    "areaha": 6.665972279316906e-10,
+                    "percent_area": 4.2343500411463975,
+                    "biomscore": 6.6659722793169065e-09,
                     "no10msquares": 1718,
                     "percent_squares": 3.078632356103505
                 },
                 "2024-25": {
-                    "areaha": 14.914228789162689,
-                    "percent_area": 4.226473949959344,
-                    "biomscore": 149.1422878916269,
+                    "areaha": 6.665972279316906e-10,
+                    "percent_area": 4.2240386929726474,
+                    "biomscore": 6.6659722793169065e-09,
                     "no10msquares": 1718,
                     "percent_squares": 3.0330849899367958
+                },
+                "2025-26": {
+                    "areaha": 6.665972279316906e-10,
+                    "percent_area": 4.059446045701817,
+                    "biomscore": 1.9559348576072373e-08,
+                    "no10msquares": 0,
+                    "percent_squares": 0.0
                 }
             }
         },
@@ -122,18 +165,25 @@
             "name": "modified grassland",
             "metrics": {
                 "2023-24": {
-                    "areaha": 107.10499080926554,
-                    "percent_area": 30.426083954996397,
-                    "biomscore": 1071.0499080926554,
+                    "areaha": 4.790418669247332e-09,
+                    "percent_area": 30.42963372676152,
+                    "biomscore": 4.790418669247332e-08,
                     "no10msquares": 15601,
                     "percent_squares": 27.956777291950395
                 },
                 "2024-25": {
-                    "areaha": 96.44049182050628,
-                    "percent_area": 27.32982255822834,
-                    "biomscore": 964.4049182050627,
+                    "areaha": 4.313464419032302e-09,
+                    "percent_area": 27.333207885197407,
+                    "biomscore": 4.313464419032302e-08,
                     "no10msquares": 14461,
                     "percent_squares": 25.530525052081494
+                },
+                "2025-26": {
+                    "areaha": 4.3491498272040095e-09,
+                    "percent_area": 26.48546727832667,
+                    "biomscore": 2.270273722515542e-08,
+                    "no10msquares": 0,
+                    "percent_squares": 0.0
                 }
             }
         },
@@ -141,18 +191,25 @@
             "name": "natural grassland",
             "metrics": {
                 "2023-24": {
-                    "areaha": 15.554524259324605,
-                    "percent_area": 4.418685417162624,
-                    "biomscore": 155.54524259324606,
+                    "areaha": 6.954663254553316e-10,
+                    "percent_area": 4.417731938287463,
+                    "biomscore": 6.954663254553316e-09,
                     "no10msquares": 2414,
                     "percent_squares": 4.325854777435309
                 },
                 "2024-25": {
-                    "areaha": 23.460794282898885,
-                    "percent_area": 6.648445406314172,
-                    "biomscore": 445.61219703429873,
+                    "areaha": 1.0490523101669149e-09,
+                    "percent_area": 6.647548719706768,
+                    "biomscore": 1.9927034365333845e-08,
                     "no10msquares": 3585,
                     "percent_squares": 6.329225662935631
+                },
+                "2025-26": {
+                    "areaha": 1.3248772774589307e-09,
+                    "percent_area": 8.0682421103197,
+                    "biomscore": 3.466088127820314e-08,
+                    "no10msquares": 0,
+                    "percent_squares": 0.0
                 }
             }
         },
@@ -160,18 +217,25 @@
             "name": "other developed land",
             "metrics": {
                 "2023-24": {
-                    "areaha": 47.8592146938073,
-                    "percent_area": 13.595710837482342,
-                    "biomscore": 478.59214693807303,
+                    "areaha": 2.140187458215174e-09,
+                    "percent_area": 13.594870293524655,
+                    "biomscore": 2.140187458215174e-08,
                     "no10msquares": 8056,
                     "percent_squares": 14.436241129668122
                 },
                 "2024-25": {
-                    "areaha": 48.17986299561533,
-                    "percent_area": 13.653467352703164,
-                    "biomscore": 478.24554414304697,
+                    "areaha": 2.154529944604323e-09,
+                    "percent_area": 13.65264881075905,
+                    "biomscore": 2.138637126625562e-08,
                     "no10msquares": 8099,
                     "percent_squares": 14.29857702764733
+                },
+                "2025-26": {
+                    "areaha": 2.351187986441427e-09,
+                    "percent_area": 14.318272525488723,
+                    "biomscore": 5.973421005567494e-09,
+                    "no10msquares": 0,
+                    "percent_squares": 0.0
                 }
             }
         },
@@ -179,18 +243,51 @@
             "name": "unsealed unvegetated surface",
             "metrics": {
                 "2023-24": {
-                    "areaha": 9.13621397334955,
-                    "percent_area": 2.5953899186544436,
-                    "biomscore": 91.3621397334955,
+                    "areaha": 4.0865097214955854e-10,
+                    "percent_area": 2.5958272675465097,
+                    "biomscore": 4.086509721495585e-09,
                     "no10msquares": 1347,
                     "percent_squares": 2.4138054619740523
                 },
                 "2024-25": {
-                    "areaha": 9.13621397334955,
-                    "percent_area": 2.5890691973074045,
-                    "biomscore": 91.3621397334955,
+                    "areaha": 4.0865097214955854e-10,
+                    "percent_area": 2.5895059954517397,
+                    "biomscore": 4.086509721495585e-09,
                     "no10msquares": 1347,
                     "percent_squares": 2.378093993856149
+                },
+                "2025-26": {
+                    "areaha": 7.672629317155147e-11,
+                    "percent_area": 0.4672480387940202,
+                    "biomscore": 7.672629317155147e-10,
+                    "no10msquares": 0,
+                    "percent_squares": 0.0
+                }
+            }
+        },
+        {
+            "name": "unsealed vegetated surface",
+            "metrics": {
+                "2023-24": {
+                    "areaha": 0,
+                    "percent_area": 0,
+                    "biomscore": 0,
+                    "no10msquares": 0,
+                    "percent_squares": 0
+                },
+                "2024-25": {
+                    "areaha": 0,
+                    "percent_area": 0,
+                    "biomscore": 0,
+                    "no10msquares": 0,
+                    "percent_squares": 0
+                },
+                "2025-26": {
+                    "areaha": 3.9305368923137343e-11,
+                    "percent_area": 0.2393619681632274,
+                    "biomscore": 1.1487680208173765e-09,
+                    "no10msquares": 0,
+                    "percent_squares": 0.0
                 }
             }
         },
@@ -198,35 +295,49 @@
             "name": "woodland",
             "metrics": {
                 "2023-24": {
-                    "areaha": 73.70372504264726,
-                    "percent_area": 20.937546504598163,
-                    "biomscore": 737.0372504264726,
+                    "areaha": 3.296180111728742e-09,
+                    "percent_area": 20.937951444878784,
+                    "biomscore": 3.296180111728742e-08,
                     "no10msquares": 11255,
                     "percent_squares": 20.168805103576805
                 },
                 "2024-25": {
-                    "areaha": 78.24154999135817,
-                    "percent_area": 22.172509052778338,
-                    "biomscore": 888.8148918622005,
+                    "areaha": 3.49909066132199e-09,
+                    "percent_area": 22.172750987134226,
+                    "biomscore": 3.974865573077849e-08,
                     "no10msquares": 12101,
                     "percent_squares": 21.364005508280076
+                },
+                "2025-26": {
+                    "areaha": 3.5555648587780592e-09,
+                    "percent_area": 21.652690862497874,
+                    "biomscore": 6.213807229591733e-08,
+                    "no10msquares": 0,
+                    "percent_squares": 0.0
                 }
             }
         }
     ],
     "totals": {
         "2023-24": {
-            "areaha": 352.01700937815684,
+            "areaha": 1.5742610352336807e-08,
             "percent_area": 100.0,
-            "biomscore": 3520.1700937815685,
+            "biomscore": 1.574261035233681e-07,
             "no10msquares": 55804,
             "percent_squares": 100.0
         },
         "2024-25": {
-            "areaha": 352.87639213548573,
+            "areaha": 1.5781039814826505e-08,
             "percent_area": 100.0,
-            "biomscore": 3868.0607797448743,
+            "biomscore": 1.7298361101811756e-07,
             "no10msquares": 56642,
+            "percent_squares": 100.0
+        },
+        "2025-26": {
+            "areaha": 1.6141812947843175e-08,
+            "percent_area": 100.0,
+            "biomscore": 1.6484813621560055e-07,
+            "no10msquares": 0,
             "percent_squares": 100.0
         }
     }
