@@ -10,6 +10,7 @@ import pandas as pd
 
 
 AREA_CRS = "EPSG:27700"
+SUMMARY_SCHEMA_VERSION = 2
 REQUIRED_POLYGON_COLUMNS = {"year", "broad", "biomscore"}
 REQUIRED_SQUARE_COLUMNS = {"year", "broad"}
 
@@ -174,7 +175,18 @@ def create_output(poly_summary, square_summary, year_scores):
 
     years = sorted(summary["year"].dropna().unique().tolist())
     habitats = sort_habitats(summary["broad"].dropna().unique().tolist())
-    output = {"years": years, "habitats": [], "totals": {}}
+    # The version and method labels make it easy to distinguish newly generated
+    # summaries from legacy JSON files that used different calculations.
+    output = {
+        "schema_version": SUMMARY_SCHEMA_VERSION,
+        "methods": {
+            "area": "Geometry reprojected to EPSG:27700; result reported in hectares",
+            "biomscore": "Arithmetic mean of valid polygon scores from 0 to 3",
+        },
+        "years": years,
+        "habitats": [],
+        "totals": {},
+    }
 
     for year in years:
         records = summary[summary["year"] == year]
@@ -211,6 +223,32 @@ def create_output(poly_summary, square_summary, year_scores):
     return output
 
 
+def validate_output(output):
+    """Stop invalid summary values from being written and deployed."""
+    if output.get("schema_version") != SUMMARY_SCHEMA_VERSION:
+        raise ValueError("Habitat summary schema version is missing or incorrect.")
+    if not output.get("years"):
+        raise ValueError("Habitat summary contains no years.")
+
+    for year in output["years"]:
+        total = output.get("totals", {}).get(year, {})
+        if not total.get("areaha") or total["areaha"] <= 0:
+            raise ValueError(f"Habitat summary area is zero or missing for {year}.")
+
+    scores = []
+    for habitat in output.get("habitats", []):
+        for metrics in habitat.get("metrics", {}).values():
+            if metrics.get("biomscore") is not None:
+                scores.append(float(metrics["biomscore"]))
+    scores.extend(
+        float(total["biomscore"])
+        for total in output.get("totals", {}).values()
+        if total.get("biomscore") is not None
+    )
+    if any(score < 0 or score > 3 for score in scores):
+        raise ValueError("Habitat summary contains a Biomscore outside the valid 0-3 range.")
+
+
 def process_habitat_data(polygons_path, squares_path, output_path):
     """Read both habitat inputs, calculate summaries, and write the dashboard JSON."""
     polygons_file = Path(polygons_path)
@@ -226,6 +264,7 @@ def process_habitat_data(polygons_path, squares_path, output_path):
     polygon_summary, year_scores = build_polygon_summary(polygons)
     square_summary = build_square_summary(squares)
     output = create_output(polygon_summary, square_summary, year_scores)
+    validate_output(output)
 
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)

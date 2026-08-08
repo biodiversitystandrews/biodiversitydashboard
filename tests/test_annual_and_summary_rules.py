@@ -8,7 +8,12 @@ from shapely.geometry import box
 
 from cameratrapsgpkgconversion import derive_sampling_year
 from habitatmanagementgpkgconversion import normalise_sampling_year
-from habitatsummaryprocessing import build_polygon_summary, calculate_polygon_areas, parse_biomscore
+from habitatsummaryprocessing import (
+    build_polygon_summary,
+    calculate_polygon_areas,
+    parse_biomscore,
+    validate_output,
+)
 
 
 class AnnualLayerTests(unittest.TestCase):
@@ -61,6 +66,20 @@ class AnnualLayerTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "outside longitude/latitude"):
             calculate_polygon_areas(polygons)
+
+    def test_output_validation_rejects_legacy_or_invalid_summaries(self):
+        """A stale schema or Biomscore outside 0-3 must not be deployed."""
+        with self.assertRaisesRegex(ValueError, "schema version"):
+            validate_output({"years": ["2025-26"], "totals": {}})
+
+        invalid = {
+            "schema_version": 2,
+            "years": ["2025-26"],
+            "totals": {"2025-26": {"areaha": 10, "biomscore": 4}},
+            "habitats": [],
+        }
+        with self.assertRaisesRegex(ValueError, "outside the valid 0-3"):
+            validate_output(invalid)
 
 
 if __name__ == "__main__":
