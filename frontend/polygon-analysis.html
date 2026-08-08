@@ -680,6 +680,10 @@ $(document).ready(function() {
     const POINT_CHECK_BATCH_SIZE = 2000;
     const MIN_RECORDS_FOR_CONCERN = 5;
     const MIN_SURVEY_DAYS_FOR_CONCERN = 2;
+    // Keep analysis grids translucent so observation markers and the underlying
+    // map remain readable when users compare biodiversity with survey coverage.
+    const HOTSPOT_GRID_FILL_OPACITY = 0.38;
+    const HOTSPOT_GRID_BORDER_OPACITY = 0.65;
 
     let map;
     let drawnItems;
@@ -1151,8 +1155,9 @@ $(document).ready(function() {
             return {
                 color: '#343a40',
                 weight: 1,
+                opacity: HOTSPOT_GRID_BORDER_OPACITY,
                 fillColor: colors[properties.biodiversity_category] || '#6c757d',
-                fillOpacity: 0.58
+                fillOpacity: HOTSPOT_GRID_FILL_OPACITY
             };
         }
 
@@ -1160,8 +1165,9 @@ $(document).ready(function() {
         return {
             color: '#343a40',
             weight: 1,
+            opacity: HOTSPOT_GRID_BORDER_OPACITY,
             fillColor: percentile >= 75 ? '#1b9e77' : percentile >= 40 ? '#ffb000' : '#d73027',
-            fillOpacity: 0.62
+            fillOpacity: HOTSPOT_GRID_FILL_OPACITY
         };
     }
 
