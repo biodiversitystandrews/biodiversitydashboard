@@ -1,11 +1,23 @@
+"""Shared column, date, text, numeric, and coordinate standardisation.
+
+All observation-to-Parquet converters import this module. Keeping these rules in
+one place prevents the main, historic, VIP, and intern datasets from interpreting
+the same input differently. Split ``year1``/``month``/``day`` values are treated
+as authoritative because they do not have the day/month ambiguity of date text.
+"""
+
 import re
 
 import geopandas as gpd
 import pandas as pd
 
 
+# Text exports often encode missing values as words rather than genuine nulls.
+# These tokens are converted to pd.NA before titles, filters, or summaries run.
 TEXT_NULLS = {"", "nan", "none", "null", "n/a", "na"}
 
+# This is the observation data contract used by every dashboard converter.
+# ``alt_names`` may be extended when a genuine new export name is encountered.
 STANDARD_COLUMNS = [
     {"name": "Date", "datatype": "date", "alt_names": ["date", "date_obs", "date observed", "date_observed"]},
     {"name": "species", "datatype": "text", "alt_names": ["species", "species name", "scientific_name", "scientific name"]},
@@ -28,10 +40,12 @@ STANDARD_COLUMNS = [
 
 
 def clean_column_key(name):
+    """Normalise a source heading so alternative names can be compared safely."""
     return re.sub(r"_+", "_", str(name).strip().lower().replace(" ", "_"))
 
 
 def standard_column_name_map():
+    """Build a lookup from every accepted heading to its canonical field name."""
     name_map = {}
     for column in STANDARD_COLUMNS:
         for alt in [column["name"], *column["alt_names"]]:
@@ -40,6 +54,12 @@ def standard_column_name_map():
 
 
 def merge_duplicate_columns(gdf):
+    """Merge identically named columns by taking the first non-null value per row.
+
+    Duplicate headings can appear after column-name cleaning, for example when an
+    input contains both ``Observer`` and ``observer``. Source order determines
+    precedence, but later columns fill gaps in earlier columns.
+    """
     result = pd.DataFrame(index=gdf.index)
     for col in dict.fromkeys(gdf.columns):
         matching = gdf.loc[:, gdf.columns == col]
@@ -52,6 +72,7 @@ def merge_duplicate_columns(gdf):
 
 
 def normalise_input_columns(gdf):
+    """Clean headings, merge duplicates, and apply canonical dashboard names."""
     gdf = gdf.copy()
     gdf.columns = [clean_column_key(col) for col in gdf.columns]
     gdf = merge_duplicate_columns(gdf)
@@ -62,6 +83,7 @@ def normalise_input_columns(gdf):
         if target is None or source == target:
             continue
         if target in gdf.columns:
+            # Prefer an existing canonical field, using the alias only to fill gaps.
             gdf[target] = gdf[target].combine_first(gdf[source])
             gdf = gdf.drop(columns=[source])
         else:
@@ -70,6 +92,7 @@ def normalise_input_columns(gdf):
 
 
 def clean_text_series(series, title_case=False):
+    """Trim text, collapse whitespace, recognise text nulls, and optionally title-case."""
     cleaned = series.astype("string").str.strip().str.replace(r"\s+", " ", regex=True)
     cleaned = cleaned.mask(cleaned.str.lower().isin(TEXT_NULLS), pd.NA)
     if title_case:
@@ -78,6 +101,12 @@ def clean_text_series(series, title_case=False):
 
 
 def standardise_date_value(value):
+    """Parse one date without allowing timezone metadata to change its calendar day.
+
+    ISO-like year-first strings are parsed year-first. Other strings are interpreted
+    day-first to match the UK collection workflow. Timezones are removed after
+    parsing because the dashboard displays observation dates, not moments in time.
+    """
     if pd.isna(value):
         return pd.NaT
 
@@ -98,10 +127,12 @@ def standardise_date_value(value):
 
 
 def standardise_date_series(series):
+    """Parse a complete date column and return one timezone-naive millisecond dtype."""
     return pd.to_datetime(series.apply(standardise_date_value), errors="coerce").astype("datetime64[ms]")
 
 
 def date_from_split_columns(gdf):
+    """Construct dates from unambiguous calendar-year, month, and day fields."""
     if not {"year1", "month", "day"}.issubset(gdf.columns):
         return pd.Series(pd.NaT, index=gdf.index, dtype="datetime64[ms]")
 
@@ -122,6 +153,7 @@ def date_from_split_columns(gdf):
 
 
 def calculate_sampling_year(date_value):
+    """Return the May-April ecological sampling year containing a calendar date."""
     if pd.isna(date_value):
         return None
     year, month = date_value.year, date_value.month
@@ -131,13 +163,22 @@ def calculate_sampling_year(date_value):
 
 
 def add_longitude_latitude(gdf):
+    """Extract WGS84 coordinates from point geometry and remove the geometry column.
+
+    Parquet consumers use numeric longitude/latitude columns. Non-point geometry is
+    left without coordinates rather than being silently converted to a centroid.
+    """
     if isinstance(gdf, gpd.GeoDataFrame) and gdf.geometry.name in gdf.columns:
         if gdf.crs is None:
             gdf = gdf.set_crs("EPSG:4326")
         elif gdf.crs.to_epsg() != 4326:
             gdf = gdf.to_crs("EPSG:4326")
 
-        point_mask = gdf.geometry.notna() & (gdf.geometry.geom_type == "Point")
+        point_mask = (
+            ~gdf.geometry.is_empty
+            & gdf.geometry.notna()
+            & (gdf.geometry.geom_type == "Point")
+        )
         gdf.loc[point_mask, "longitude"] = gdf.loc[point_mask].geometry.x
         gdf.loc[point_mask, "latitude"] = gdf.loc[point_mask].geometry.y
         gdf = gdf.drop(columns=[gdf.geometry.name])
@@ -145,6 +186,12 @@ def add_longitude_latitude(gdf):
 
 
 def standardise_dashboard_gdf(gdf):
+    """Apply the complete shared observation standardisation contract.
+
+    Split date fields take precedence row by row. The combined Date field is used
+    only when a valid split date is unavailable. Derived year fields are then
+    rebuilt from that final date so they cannot disagree with one another.
+    """
     gdf = normalise_input_columns(gdf)
     gdf = add_longitude_latitude(gdf)
 
@@ -152,6 +199,7 @@ def standardise_dashboard_gdf(gdf):
     parsed_dates = standardise_date_series(gdf["Date"]) if "Date" in gdf.columns else split_dates
 
     if "Date" in gdf.columns or split_dates.notna().any():
+        # ``combine_first`` deliberately gives the split fields first priority.
         gdf["Date"] = split_dates.combine_first(parsed_dates)
         gdf["year1"] = gdf["Date"].dt.year
         gdf["month"] = gdf["Date"].dt.month

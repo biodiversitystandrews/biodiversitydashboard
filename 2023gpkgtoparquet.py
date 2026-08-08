@@ -1,3 +1,9 @@
+"""Convert the archived 2023 observation GeoPackage to ``data/2023data.parquet``.
+
+This compatibility converter is called by ``update_2023_data.yml``. It should remain
+behaviourally stable; shared date fixes belong in ``dashboard_standardisation.py``.
+"""
+
 import pandas as pd
 import geopandas as gpd
 import numpy as np
@@ -47,7 +53,7 @@ def convert_legacy_gpkg(input_gpkg, output_parquet, species_csv):
         sys.exit(1)
 
     print("\nStandardizing data and transforming schema...")
-    
+
     gdf['Date'] = standardise_date_series(gdf['Date'])
     print("Standardized 'Date' column to datetime64[ms].")
 
@@ -69,7 +75,7 @@ def convert_legacy_gpkg(input_gpkg, output_parquet, species_csv):
         gdf.drop(columns=['english name'], inplace=True)
 
     print("\nFinalizing column structure and data types...")
-    
+
     for col in FINAL_COLUMNS:
         if col not in gdf.columns:
             gdf[col] = None
@@ -92,7 +98,7 @@ def convert_legacy_gpkg(input_gpkg, output_parquet, species_csv):
         output_dir = os.path.dirname(output_parquet)
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
-            
+
         print(f"\nSaving final data to '{output_parquet}'...")
         gdf.to_parquet(output_parquet, index=False)
         print(f"\n--- Conversion successful! ---")
@@ -105,9 +111,9 @@ if __name__ == '__main__':
     if len(sys.argv) != 4:
         print("Usage: python 2023gpkgtoparquet.py <input_gpkg_path> <output_parquet_path> <species_csv_path>")
         sys.exit(1)
-    
+
     input_path = sys.argv[1]
     output_path = sys.argv[2]
     csv_path = sys.argv[3]
-    
+
     convert_legacy_gpkg(input_path, output_path, csv_path)

@@ -1,3 +1,10 @@
+"""Convert the all-years master GeoPackage to ``data/bigdata.parquet``.
+
+Called by ``update-bigdata.yml``. This script intentionally mirrors the current-data
+converter because the two sources are stored as separate Parquets and combined by
+the API. Shared input-format rules belong in ``dashboard_standardisation.py``.
+"""
+
 import pandas as pd
 import geopandas as gpd
 import numpy as np
@@ -24,6 +31,9 @@ OUTPUT_PARQUET_PATH = 'data/bigdata.parquet'
 def find_best_layer(gpkg_path: str) -> str | None:
     """
     Inspects a GeoPackage file and returns the name of the layer with the most features.
+
+    This historical rule assumes the observation layer is the largest populated
+    layer. See the maintenance handbook before changing multi-layer selection.
     """
     print(f"\nInspecting layers in: {gpkg_path}")
     try:
@@ -203,7 +213,7 @@ def main():
             cache_df = pd.read_csv(API_CACHE_PATH, encoding='latin-1')
             cache_df.dropna(subset=['species'], inplace=True)
             cache_map = pd.Series(cache_df.english_name.values, index=cache_df.species).to_dict()
-            
+
             original_map_size = len(final_species_map)
             for species, name in cache_map.items():
                 if species not in final_species_map:
@@ -217,9 +227,9 @@ def main():
         return
 
     all_data_species = set(gdf['species'].dropna().unique())
-    
+
     species_to_lookup = [s for s in all_data_species if s not in final_species_map or pd.isna(final_species_map.get(s))]
-    
+
     newly_cached_entries = []
     if species_to_lookup:
         print(f"Found {len(species_to_lookup)} species requiring API lookup.")
@@ -231,7 +241,7 @@ def main():
                 final_species_map[species_name] = english_name
                 newly_cached_entries.append({'species': species_name, 'english_name': english_name})
             else:
-                print(" Not found.") 
+                print(" Not found.")
         print("API lookup complete.")
     else:
         print("No new API lookups were required. All species found in local lists.")
@@ -250,7 +260,7 @@ def main():
         output_dir = os.path.dirname(OUTPUT_PARQUET_PATH)
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
-        
+
         gdf.to_parquet(OUTPUT_PARQUET_PATH, index=False)
         print(f"Saved data to '{OUTPUT_PARQUET_PATH}' with {len(gdf)} rows.")
     except Exception as e:
@@ -261,9 +271,9 @@ def main():
         new_cache_df = pd.DataFrame(newly_cached_entries)
         try:
             new_cache_df.to_csv(
-                API_CACHE_PATH, 
-                mode='a', 
-                index=False, 
+                API_CACHE_PATH,
+                mode='a',
+                index=False,
                 header=not os.path.exists(API_CACHE_PATH)
             )
             print(f"Successfully updated '{API_CACHE_PATH}'.")

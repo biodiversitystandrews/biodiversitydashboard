@@ -1,3 +1,10 @@
+"""Convert intern observations to ``data/intern24_25.parquet``.
+
+Called by ``update_intern_data.yml``. The filename is historical even though the
+shared standardiser can process later sampling years; changing the output filename
+also requires updating the workflow and checking API dataset overlap.
+"""
+
 import pandas as pd
 import geopandas as gpd
 import numpy as np
@@ -17,6 +24,7 @@ FINAL_COLUMNS = [
 ]
 
 def find_best_layer(gpkg_path: str) -> str | None:
+    """Choose the layer with the most features from a possibly multilayer GPKG."""
     print(f"\nInspecting layers in: {gpkg_path}")
     try:
         layer_names = fiona.listlayers(gpkg_path)
@@ -40,6 +48,7 @@ def find_best_layer(gpkg_path: str) -> str | None:
     return best_layer
 
 def get_name_from_itis(species_name: str) -> str | None:
+    """Try to retrieve an English common name from the ITIS service."""
     try:
         url = "https://www.itis.gov/ITISWebService/jsonservice/searchForAnyMatch"
         params = {'srchKey': species_name, 'searchType': 'exact'}
@@ -55,6 +64,7 @@ def get_name_from_itis(species_name: str) -> str | None:
     return None
 
 def get_name_from_ncbi(species_name: str) -> str | None:
+    """Try to retrieve an English common name from NCBI Taxonomy."""
     try:
         search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
         search_params = {'db': 'taxonomy', 'term': species_name, 'retmode': 'json'}
@@ -74,6 +84,7 @@ def get_name_from_ncbi(species_name: str) -> str | None:
     return None
 
 def get_name_from_gbif(species_name: str) -> str | None:
+    """Try to retrieve an English common name from the GBIF species API."""
     try:
         match_url = "https://api.gbif.org/v1/species/match"
         params = {'name': species_name, 'strict': 'false'}
@@ -93,6 +104,7 @@ def get_name_from_gbif(species_name: str) -> str | None:
     return None
 
 def get_best_english_name(species_name: str) -> str | None:
+    """Query supported taxonomy services in order until one returns a name."""
     if not species_name or pd.isna(species_name): return None
     cleaned_name = species_name.replace('_', ' ').strip()
     cleaned_name = re.sub(r'\s+sp\.?$', '', cleaned_name, flags=re.IGNORECASE)
@@ -106,11 +118,11 @@ def get_best_english_name(species_name: str) -> str | None:
 
 def process_intern_data(input_gpkg, output_parquet, species_csv, api_cache_csv):
     """Main function to execute the full data processing pipeline."""
-    
+
     if not os.path.exists(input_gpkg):
         print(f"ERROR: Input file not found at '{input_gpkg}'.")
         sys.exit(1)
-        
+
     layer_to_load = find_best_layer(input_gpkg)
     if layer_to_load is None:
         print("Exiting: No suitable layer found.")
@@ -144,7 +156,7 @@ def process_intern_data(input_gpkg, output_parquet, species_csv, api_cache_csv):
 
     all_data_species = set(gdf['species'].dropna().unique())
     species_to_lookup = sorted([s for s in all_data_species if s not in final_species_map])
-    
+
     newly_cached_species = {}
     if species_to_lookup:
         print(f"Found {len(species_to_lookup)} new species to look up via API...")
@@ -159,7 +171,7 @@ def process_intern_data(input_gpkg, output_parquet, species_csv, api_cache_csv):
                 print(" Not found.")
     else:
         print("No new API lookups were required.")
-    
+
     if newly_cached_species:
         print(f"\nUpdating API cache file at '{api_cache_csv}' with {len(newly_cached_species)} new entries.")
         new_cache_df = pd.DataFrame(list(newly_cached_species.items()), columns=['species', 'english_name'])
@@ -180,7 +192,7 @@ def process_intern_data(input_gpkg, output_parquet, species_csv, api_cache_csv):
                 else: gdf[col] = gdf[col].astype(dtype)
             except Exception as e:
                 print(f"Warning: Could not set type for '{col}'. Details: {e}")
-            
+
     gdf = gdf[FINAL_COLUMNS]
     print("Final column order enforced.")
 
@@ -197,5 +209,5 @@ if __name__ == '__main__':
     if len(sys.argv) != 5:
         print("Usage: python interngpkgtoparquet.py <input_gpkg> <output_parquet> <species_csv> <api_cache_csv>")
         sys.exit(1)
-    
+
     process_intern_data(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])

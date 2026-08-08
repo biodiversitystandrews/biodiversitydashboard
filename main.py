@@ -1,3 +1,11 @@
+"""FastAPI backend for the University biodiversity dashboard.
+
+The service is read-only. On first use it loads every Parquet file in ``data/``,
+validates their shared schema, assigns globally unique dashboard record IDs, and
+caches the combined DataFrame for the lifetime of the process. Generated GeoJSON
+and JSON files are served from the same directory with short browser caching.
+"""
+
 import os
 import sys
 import gzip
@@ -19,12 +27,21 @@ from dashboard_standardisation import standardise_date_series
 
 app = FastAPI(title="Biodiversity Dashboard", version="1.0.0")
 
-origins = [
+DEFAULT_CORS_ORIGINS = [
     "https://biodiversitydashboard-ls.netlify.app",
     "https://biodiversitydashboard-new.netlify.app",
+    "https://biodiversity.wp.st-andrews.ac.uk",
     "http://127.0.0.1:5500",
     "http://localhost:5500",
 ]
+
+# Additional deployment origins can be supplied without editing source code.
+# Example: DASHBOARD_CORS_ORIGINS=https://new-host.example,https://preview.example
+configured_origins = os.getenv("DASHBOARD_CORS_ORIGINS", "").split(",")
+origins = list(dict.fromkeys([
+    *DEFAULT_CORS_ORIGINS,
+    *(origin.strip() for origin in configured_origins if origin.strip()),
+]))
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,6 +56,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 @app.head("/")
 def read_root_head():
+    """Answer hosting-platform HEAD checks without loading dashboard data."""
     return Response(status_code=200)
 
 DATA_PATH = Path(__file__).parent / "data"
@@ -47,6 +65,7 @@ DATA_PATH = Path(__file__).parent / "data"
 # avoids repeatedly reading and encoding the same JSON for every visitor.
 @lru_cache(maxsize=32)
 def load_static_json(filename: str) -> bytes:
+    """Read a generated JSON file once and retain its bytes in memory."""
     return (DATA_PATH / filename).read_bytes()
 
 
@@ -88,6 +107,30 @@ POLYGON_ANALYSIS_COLUMNS = [
 MAP_AGGREGATION_THRESHOLD = 10_000
 MAP_GRID_DEGREES = 0.001
 
+# These fields are required by filters, summaries, map markers, and polygon analysis.
+# Failing at startup gives maintainers a useful error instead of unrelated endpoint
+# failures later. ``count`` remains optional because many observations omit it.
+REQUIRED_OBSERVATION_COLUMNS = {
+    "Date",
+    "english_name",
+    "species",
+    "obs",
+    "taxa",
+    "year",
+    "latitude",
+    "longitude",
+}
+
+
+def validate_observation_schema(dataframe: pd.DataFrame) -> None:
+    """Raise a clear error when combined Parquet data violates the API contract."""
+    missing = sorted(REQUIRED_OBSERVATION_COLUMNS - set(dataframe.columns))
+    if missing:
+        raise ValueError(
+            "Dashboard Parquet data is missing required column(s): "
+            + ", ".join(missing)
+        )
+
 def get_dataframe() -> pd.DataFrame:
     """Return the shared DataFrame, loading it once even under concurrent calls."""
     global _cached_df
@@ -103,16 +146,27 @@ def get_dataframe() -> pd.DataFrame:
 def load_dataframe_from_disk() -> pd.DataFrame:
     """Load, standardise, and optimise all dashboard Parquet records."""
     print("Cache is empty. Loading data from disk...")
-    parquet_files = list(DATA_PATH.glob("*.parquet"))
+    # Sorting makes source order and generated record IDs stable between restarts.
+    parquet_files = sorted(DATA_PATH.glob("*.parquet"), key=lambda path: path.name)
     if not parquet_files:
         raise HTTPException(status_code=500, detail="No parquet data files found on server.")
 
     try:
-        frames = [pd.read_parquet(file) for file in parquet_files]
+        frames = []
+        for file in parquet_files:
+            frame = pd.read_parquet(file)
+            frame["source_file"] = file.name
+            frames.append(frame)
         dataframe = pd.concat(frames, ignore_index=True)
 
         if "Taxa" in dataframe.columns:
-            dataframe = dataframe.rename(columns={"Taxa": "taxa"})
+            if "taxa" in dataframe.columns:
+                dataframe["taxa"] = dataframe["taxa"].combine_first(dataframe["Taxa"])
+                dataframe = dataframe.drop(columns="Taxa")
+            else:
+                dataframe = dataframe.rename(columns={"Taxa": "taxa"})
+
+        validate_observation_schema(dataframe)
 
         if "Date" in dataframe.columns:
             dataframe["Date"] = standardise_date_series(dataframe["Date"])
@@ -121,15 +175,21 @@ def load_dataframe_from_disk() -> pd.DataFrame:
         if "year" in dataframe.columns:
             dataframe["year"] = dataframe["year"].astype("category")
 
-        for column in ["english_name", "species", "obs", "taxa"]:
+        for column in ["english_name", "species", "obs", "taxa", "source_file"]:
             if column in dataframe.columns:
                 dataframe[column] = dataframe[column].astype("category")
 
+        dataframe["latitude"] = pd.to_numeric(dataframe["latitude"], errors="coerce")
+        dataframe["longitude"] = pd.to_numeric(dataframe["longitude"], errors="coerce")
         if "count" in dataframe.columns:
             dataframe["count"] = pd.to_numeric(dataframe["count"], errors="coerce")
-        if "id" not in dataframe.columns:
-            dataframe.reset_index(inplace=True)
-            dataframe = dataframe.rename(columns={"index": "id"})
+
+        # Input IDs are meaningful only within their source file. Preserve them for
+        # diagnosis, then create one unique ID namespace for the combined dashboard.
+        if "id" in dataframe.columns and "source_record_id" not in dataframe.columns:
+            dataframe = dataframe.rename(columns={"id": "source_record_id"})
+        dataframe = dataframe.reset_index(drop=True)
+        dataframe["id"] = np.arange(len(dataframe), dtype="int64")
 
         print("Data loaded and cached successfully.")
         return dataframe
@@ -225,10 +285,11 @@ def apply_filters(
     species: Optional[str] = None,
     obs: Optional[str] = None,
     taxa: Optional[str] = None,
-    year: Optional[str] = None, 
+    year: Optional[str] = None,
     month: Optional[int] = None,
     bbox: Optional[str] = None,
 ) -> pd.DataFrame:
+    """Apply optional categorical, time, and geographic filters to observation rows."""
     if english_name:
         query_df = query_df[query_df["english_name"].isin(english_name.split(","))]
     if species:
@@ -237,7 +298,7 @@ def apply_filters(
         query_df = query_df[query_df["obs"].isin(obs.split(","))]
     if taxa:
         query_df = query_df[query_df["taxa"].isin(taxa.split(","))]
-    
+
     if year:
         query_df = query_df[query_df["year"] == year]
 
@@ -257,18 +318,22 @@ def apply_filters(
     return query_df
 
 def _get_options(df_source: pd.DataFrame, key_name: str):
+    """Return sorted non-null values used to populate one frontend filter."""
     return sorted(df_source[key_name].dropna().unique().tolist())
 
 @app.get("/")
 def root():
+    """Return a small response confirming that the API root is reachable."""
     return {"status": "ok", "message": "Biodiversity Dashboard API root"}
 
 @app.get("/health")
 def health():
+    """Provide the lightweight health check used by the hosting service."""
     return {"ok": True}
 
 @app.get("/api/management_years")
 def get_management_years():
+    """List years discovered from the generated management GeoJSON filenames."""
     years = []
     pattern = re.compile(r"management_(\d{4}-\d{2})\.geojson")
     for f in DATA_PATH.glob("management_*.geojson"):
@@ -279,6 +344,7 @@ def get_management_years():
 
 @app.get("/api/management_points")
 def get_management_points(year: str):
+    """Return the generated habitat-management layer for one sampling year."""
     return static_json_response(
         f"management_{year}.geojson",
         f"Management data for year {year} not found.",
@@ -286,6 +352,7 @@ def get_management_points(year: str):
 
 @app.get("/api/cameratrap_years")
 def get_cameratrap_years():
+    """List years discovered from the generated camera-trap GeoJSON filenames."""
     years = []
     pattern = re.compile(r"cameratraps_(\d{4}-\d{2})\.geojson")
     for f in DATA_PATH.glob("cameratraps_*.geojson"):
@@ -296,6 +363,7 @@ def get_cameratrap_years():
 
 @app.get("/api/cameratrap_points")
 def get_cameratrap_points(year: str):
+    """Return the generated camera-trap layer for one sampling year."""
     return static_json_response(
         f"cameratraps_{year}.geojson",
         f"Camera trap data for year {year} not found.",
@@ -315,6 +383,7 @@ def get_habitat_years():
 
 @app.get("/api/habitat_polygons")
 def get_habitat_polygons(year: str):
+    """Validate a requested year and return its generated habitat polygons."""
     if not re.fullmatch(r"\d{4}-\d{2}", year):
         raise HTTPException(
             status_code=400,
@@ -336,6 +405,7 @@ def get_estate_boundary():
 
 @app.get("/api/summary/habitat")
 def get_habitat_summary():
+    """Return the precomputed habitat-area and Biomscore summary table."""
     return static_json_response(
         "habitat_summary.json",
         "Habitat summary file not found.",
@@ -362,6 +432,7 @@ def get_hotspots(metric: str):
 
 @app.get("/api/all_unique_species")
 def get_all_unique_species(page: int = 1, page_size: int = 10):
+    """Return an alphabetic, paginated list of distinct scientific names."""
     df = get_dataframe()
     all_unique_species = sorted(df['species'].dropna().unique().tolist())
     total_species = len(all_unique_species)
@@ -384,6 +455,7 @@ def get_filter_options(
     year: Optional[str] = None,
     month: Optional[str] = None,
 ):
+    """Return valid values for each filter after applying the other filters."""
     base_df = get_dataframe()
     options = {}
     temp_df = apply_filters(base_df, species=species, obs=obs, taxa=taxa, year=year, month=month)
@@ -412,6 +484,7 @@ def get_records(
     month: Optional[int] = None,
     bbox: Optional[str] = None,
 ):
+    """Return one paginated page of observation records matching the filters."""
     df = get_dataframe()
     df.sort_values(by=['Date', 'species', 'id'], ascending=[True, True, True], inplace=True)
     query_df = apply_filters(df, english_name, species, obs, taxa, year, month, bbox)
@@ -443,6 +516,7 @@ def get_record_page(
     month: Optional[int] = None,
     bbox: Optional[str] = None,
 ):
+    """Find which filtered table page contains a particular dashboard record."""
     df = get_dataframe()
     df.sort_values(by=['Date', 'species', 'id'], ascending=[True, True, True], inplace=True)
     query_df = apply_filters(df, english_name, species, obs, taxa, year, month, bbox)
@@ -464,6 +538,7 @@ def get_map_data(
     month: Optional[int] = None,
     bbox: Optional[str] = None,
 ):
+    """Return filtered and spatially aggregated records for the main map."""
     df = get_dataframe()
     query_df = apply_filters(df, english_name, species, obs, taxa, year, month, bbox)
     map_df = prepare_map_dataframe(query_df)
@@ -498,9 +573,10 @@ def get_diversity_summary(
     month: Optional[int] = None,
     bbox: Optional[str] = None,
 ):
+    """Calculate diversity indices and record totals for the filtered records."""
     df = get_dataframe()
     query_df = apply_filters(df, english_name, species, obs, taxa, year, month, bbox)
-    
+
     if query_df.empty:
         return {"shannon": 0, "simpson": 0, "species_richness": 0, "total_records": 0}
 
@@ -529,6 +605,7 @@ def get_diversity_summary(
 
 @app.get("/api/summary/annual_trends")
 def get_annual_trends():
+    """Calculate yearly record, richness, Shannon, and Simpson summaries."""
     df = get_dataframe()
     if 'year' not in df.columns or df['year'].isnull().all():
         return {"trends": []}
@@ -536,7 +613,7 @@ def get_annual_trends():
     yearly_data = []
     for year, group in sorted(df.groupby('year', observed=True), key=lambda x: x[0]):
         total_records = len(group)
-        
+
         use_count_column = "count" in group.columns and group["count"].notna().sum() > (len(group) / 2)
 
         if use_count_column:
@@ -554,13 +631,13 @@ def get_annual_trends():
             gini_simpson_index = 1 - (proportions**2).sum()
 
         yearly_data.append({
-            "year": year, 
+            "year": year,
             "total_records": int(total_records),
             "unique_species": int(species_richness),
             "shannon": round(float(shannon_index), 3),
             "simpson": round(float(gini_simpson_index), 3),
         })
-    
+
     return {"trends": yearly_data}
 
 @app.get("/api/summary/species_distribution")
@@ -573,6 +650,7 @@ def get_species_distribution(
     month: Optional[int] = None,
     bbox: Optional[str] = None,
 ):
+    """Return the 20 most recorded species and their taxonomic groups."""
     df = get_dataframe()
     query_df = apply_filters(df, english_name, species, obs, taxa, year, month, bbox)
     if query_df.empty:
@@ -600,6 +678,7 @@ def get_temporal_trends(
     month: Optional[int] = None,
     bbox: Optional[str] = None,
 ):
+    """Return filtered observation-record totals for each calendar month."""
     df = get_dataframe()
     query_df = apply_filters(df, english_name, species, obs, taxa, year, month, bbox)
     if query_df.empty:
@@ -617,6 +696,7 @@ def get_observer_comparison(
     month: Optional[int] = None,
     bbox: Optional[str] = None,
 ):
+    """Compare selected observers by their number of records in each taxon."""
     if not obs:
         return {}
     df = get_dataframe()
@@ -637,6 +717,7 @@ def get_observer_stats(
     month: Optional[int] = None,
     bbox: Optional[str] = None,
 ):
+    """Return a taxonomic record breakdown for one selected observer."""
     df = get_dataframe()
     query_df = apply_filters(df, english_name, species, None, taxa, year, month, bbox)
     observer_df = query_df[query_df["obs"] == observer_name]

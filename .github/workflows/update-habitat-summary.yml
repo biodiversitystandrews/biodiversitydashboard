@@ -3,10 +3,22 @@ name: Update Habitat Summary JSON from Google Drive
 on:
   repository_dispatch:
     types: [new-habitat-summary-files]
+  # Allows maintainers to retry processing without moving/re-uploading a file.
+  workflow_dispatch:
+    inputs:
+      file_id:
+        description: Google Drive file ID of the habitat-summary ZIP
+        required: true
+        type: string
+
+concurrency:
+  group: dashboard-generated-data-writes
+  cancel-in-progress: false
 
 jobs:
   build-and-commit-summary:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: write
 
@@ -27,23 +39,20 @@ jobs:
       - name: Install Python packages
         run: |
           pip install --upgrade pip
-          pip install geopandas pandas
-          pip install -r requirements.txt
-      
-      - name: Install Google API Python Client
-        run: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
+          pip install -r requirements.txt -r requirements-workflows.txt
 
       - name: Authenticate to Google Drive
         run: echo '${{ secrets.GDRIVE_CREDENTIALS_DATA }}' > gdrive-credentials.json
 
       - name: Download .zip file from Google Drive
-        run: python download_from_gdrive.py "${{ github.event.client_payload.file_id }}" "habitat-summary-input.zip"
-      
+        # Automatic Drive events use client_payload; manual runs use the input.
+        run: python download_from_gdrive.py "${{ github.event.client_payload.file_id || inputs.file_id }}" "habitat-summary-input.zip"
+
       - name: Create source directory and unzip files
         run: |
           mkdir -p source_data
           unzip habitat-summary-input.zip -d source_data/
-      
+
       - name: Run habitat summary processing script
         run: |
           python habitatsummaryprocessing.py \
@@ -60,5 +69,6 @@ jobs:
             echo "No changes to commit."
           else
             git commit -m "Feat: Update habitat summary JSON data"
-            git push
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
           fi

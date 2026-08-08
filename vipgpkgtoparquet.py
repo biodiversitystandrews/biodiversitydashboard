@@ -1,3 +1,9 @@
+"""Convert VIP observations to ``data/vipdata.parquet``.
+
+Called by ``update_vip_data.yml``. The converter enriches English names but delegates
+column, date, numeric, and coordinate rules to ``dashboard_standardisation.py``.
+"""
+
 import pandas as pd
 import geopandas as gpd
 import numpy as np
@@ -18,6 +24,7 @@ FINAL_COLUMNS = [
 ]
 
 def find_best_layer(gpkg_path: str) -> str | None:
+    """Choose the layer with the most features from a possibly multilayer GPKG."""
     print(f"\nInspecting layers in: {gpkg_path}")
     try:
         layer_names = fiona.listlayers(gpkg_path)
@@ -27,7 +34,7 @@ def find_best_layer(gpkg_path: str) -> str | None:
     if not layer_names:
         print("ERROR: No layers found in the file.")
         return None
-    
+
     layer_counts = {}
     for name in layer_names:
         try:
@@ -36,16 +43,17 @@ def find_best_layer(gpkg_path: str) -> str | None:
         except fiona.errors.FionaError:
             print(f"Warning: Could not read layer '{name}'. It might not be a feature layer.")
             continue
-            
+
     if not layer_counts:
         print("ERROR: No readable feature layers found in the file.")
         return None
-        
+
     best_layer = max(layer_counts, key=layer_counts.get)
     print(f"Layer feature counts: {layer_counts}. Selected '{best_layer}'.")
     return best_layer
 
 def get_name_from_itis(species_name: str) -> str | None:
+    """Try to retrieve an English common name from the ITIS service."""
     try:
         url = "https://www.itis.gov/ITISWebService/jsonservice/searchForAnyMatch"
         params = {'srchKey': species_name, 'searchType': 'exact'}
@@ -61,6 +69,7 @@ def get_name_from_itis(species_name: str) -> str | None:
     return None
 
 def get_name_from_ncbi(species_name: str) -> str | None:
+    """Try to retrieve an English common name from NCBI Taxonomy."""
     try:
         search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
         search_params = {'db': 'taxonomy', 'term': species_name, 'retmode': 'json'}
@@ -80,6 +89,7 @@ def get_name_from_ncbi(species_name: str) -> str | None:
     return None
 
 def get_name_from_gbif(species_name: str) -> str | None:
+    """Try to retrieve an English common name from the GBIF species API."""
     try:
         match_url = "https://api.gbif.org/v1/species/match"
         params = {'name': species_name, 'strict': 'false'}
@@ -99,6 +109,7 @@ def get_name_from_gbif(species_name: str) -> str | None:
     return None
 
 def get_best_english_name(species_name: str) -> str | None:
+    """Query supported taxonomy services in order until one returns a name."""
     if not species_name or pd.isna(species_name): return None
     cleaned_name = species_name.replace('_', ' ').strip()
     cleaned_name = re.sub(r'\s+sp\.?$', '', cleaned_name, flags=re.IGNORECASE)
@@ -112,11 +123,11 @@ def get_best_english_name(species_name: str) -> str | None:
 
 def process_vip_data(input_gpkg, output_parquet, species_csv, api_cache_csv):
     """Main function to execute the full data processing pipeline for the VIP file."""
-    
+
     if not os.path.exists(input_gpkg):
         print(f"ERROR: Input file not found at '{input_gpkg}'.")
         sys.exit(1)
-        
+
     layer_to_load = find_best_layer(input_gpkg)
     if layer_to_load is None:
         print("Exiting: No suitable layer found.")
@@ -148,7 +159,7 @@ def process_vip_data(input_gpkg, output_parquet, species_csv, api_cache_csv):
 
     all_data_species = set(gdf['species'].dropna().unique())
     species_to_lookup = sorted([s for s in all_data_species if s not in final_species_map])
-    
+
     newly_cached_entries = []
     if species_to_lookup:
         print(f"Found {len(species_to_lookup)} species requiring API lookup.")
@@ -157,7 +168,7 @@ def process_vip_data(input_gpkg, output_parquet, species_csv, api_cache_csv):
             if english_name:
                 final_species_map[species_name] = english_name
                 newly_cached_entries.append({'species': species_name, 'english_name': english_name})
-    
+
     gdf['english_name'] = gdf['species'].map(final_species_map)
     print("Applied final species map to create 'english_name' column.")
 
@@ -174,7 +185,7 @@ def process_vip_data(input_gpkg, output_parquet, species_csv, api_cache_csv):
 
     for col in FINAL_COLUMNS:
         if col not in gdf.columns: gdf[col] = None
-            
+
     gdf = gdf[FINAL_COLUMNS]
     print("Final column order enforced.")
 
@@ -196,5 +207,5 @@ if __name__ == '__main__':
     if len(sys.argv) != 5:
         print("Usage: python vipgpkgtoparquet.py <input_gpkg> <output_parquet> <species_csv> <api_cache_csv>")
         sys.exit(1)
-    
+
     process_vip_data(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])

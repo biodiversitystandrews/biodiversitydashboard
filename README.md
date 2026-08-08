@@ -1,5 +1,7 @@
 # University of St Andrews Biodiversity Dashboard
 
+New maintainers should read [`docs/maintenance-handbook.md`](docs/maintenance-handbook.md) before changing data contracts, workflows, annual file handling, or generated outputs.
+
 This repository contains the data-processing pipeline, API, and browser-based dashboard used to display biodiversity records collected across the University of St Andrews estate.
 
 The system has three main responsibilities:
@@ -14,9 +16,14 @@ The system has three main responsibilities:
 .
 |-- .github/workflows/           GitHub Actions data-processing workflows
 |-- data/                        Generated Parquet, GeoJSON, and JSON dashboard data
+|-- docs/                        Maintenance handbook and University server specification
 |-- frontend/
+|   |-- dashboard-config.js      Shared API deployment URL
 |   |-- index.html               Main public dashboard
-|   `-- polygon-analysis.html    Standalone polygon-comparison tool
+|   |-- polygon-analysis.html    Standalone polygon-comparison tool
+|   `-- polygon-analysis-worker.js Background polygon calculations
+|-- scripts/                     Validation and maintenance helpers
+|-- tests/                       Small executable examples of data rules
 |-- dashboard_standardisation.py Shared GPKG column, date, and geometry handling
 |-- gpkgtoparquet.py             Main biodiversity GPKG conversion
 |-- gpkgtobigdata.py             Large biodiversity GPKG conversion
@@ -32,6 +39,7 @@ The system has three main responsibilities:
 |-- species list.csv             Master species lookup
 |-- species_api_cache.csv        Cached species-name API results
 |-- requirements.txt             Python dependencies
+|-- requirements-workflows.txt   Google Drive workflow-only dependencies
 |-- Procfile                     Render start command
 `-- netlify.toml                 Netlify frontend configuration
 ```
@@ -206,20 +214,22 @@ Only a limited number of random polygons are drawn as map previews. All accepted
 
 The final file is a pre-unioned version of the habitat estate boundary. Producing it in GeoPandas avoids expensive browser-side geometry unions and gives random-placement checks one authoritative estate outline. The polygon tool calculates the percentage of the focal polygon overlapping high and moderate biodiversity cells and high survey-effort cells. The main dashboard can display both generated layers. Hotspot layers are descriptive summaries of the available observations, not independent ecological survey evidence.
 
-### Concern Categories
+### Relative Biodiversity Categories
 
-The colour categories are decision-support indicators, not construction permission or ecological approval:
+The colour categories show relative biodiversity value compared with sufficiently surveyed random areas of the same shape and size:
 
 | Colour | Meaning |
 |---|---|
-| Green | Lower biodiversity concern relative to comparison areas |
-| Amber | Moderate concern; further review recommended |
-| Red | High concern; ecological review strongly recommended |
+| Red | Lower relative biodiversity value |
+| Amber | Moderate relative biodiversity value |
+| Green | Higher relative biodiversity value |
 | Grey | Insufficient survey data for a reliable interpretation |
 
 The interface should distinguish biodiversity value from evidence confidence. Low survey effort must not be presented as evidence of low biodiversity value.
 
-Grey requires at least five records across at least two distinct survey days. Red is assigned when the Biodiversity Index is at or above the 75th comparison percentile or at least 25% of the polygon overlaps high-biodiversity hotspot cells. Amber is assigned at or above the 40th percentile or when at least 25% overlaps moderate-or-high cells. These project thresholds must be reviewed with ecological specialists before being used in formal decision-making.
+Grey requires at least five records across at least two distinct survey days. High requires a combined Biodiversity Index and species-richness score of at least 75, with both component percentiles at least 60. Moderate begins at a combined score of 40. These project thresholds must be reviewed with ecological specialists before being used in formal decision-making.
+
+The observation-effort grid uses the same traffic-light direction: red for lower effort, amber for moderate effort and green for higher effort. Lower effort identifies a need for more recording; it is not evidence of lower biodiversity.
 
 ## API
 
@@ -259,6 +269,10 @@ Workflows under `.github/workflows/` process different input datasets. The norma
 6. The relevant conversion script creates Parquet, GeoJSON, or JSON output.
 7. GitHub Actions commits changed generated files.
 8. Render and Netlify deploy the updated repository.
+
+Habitat polygons, habitat management and camera-trap uploads are converted into annual files. Management records use their sampling-year field. Camera-trap records use an existing sampling-year label when supplied; otherwise the converter derives the May-April sampling year from calendar year and deployment month. Each upload is treated as the current master dataset, so previously generated annual files are removed before the replacement set is written.
+
+Habitat-summary Biomscore is the arithmetic mean of valid 0-3 polygon scores for each habitat and year. The processor accepts numeric scores and labels beginning with the score, such as `3 - High`. Missing or invalid scores are excluded from the mean and are never silently converted to zero. Polygon areas are reprojected to British National Grid (`EPSG:27700`) before square metres and hectares are calculated. Missing, inconsistent, or zero-area annual geometry stops the workflow instead of publishing a misleading table of zeros.
 
 The hotspot workflow also listens for successful completion of the Parquet and habitat-update workflows. This `workflow_run` trigger is required because commits pushed with GitHub's built-in `GITHUB_TOKEN` do not trigger an ordinary chained `push` workflow. The hotspot workflow can also be run manually from the Actions tab.
 
@@ -301,6 +315,8 @@ https://<render-service>/health
 `netlify.toml` publishes the `frontend` directory without a build step. Both `index.html` and `polygon-analysis.html` must therefore be inside `frontend/`.
 
 The production Netlify address must be included in `main.py` under the CORS origin list. The frontend API base URL must point to the active Render service.
+
+Requirements for replacing the Render API with University infrastructure are documented in [`docs/university-server-requirements.md`](docs/university-server-requirements.md).
 
 ## Testing
 
@@ -378,4 +394,3 @@ Dashboard records are opportunistic observations rather than a fully controlled 
 - Missing or inaccurate records
 
 The dashboard supports exploration and prioritisation. It does not replace an ecological impact assessment, protected-species survey, planning process, or expert review.
-

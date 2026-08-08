@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biodiversity Dashboard</title>
-    
+
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
@@ -18,7 +18,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
     <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
-    
+    <script src="dashboard-config.js"></script>
+
     <style>
         :root {
             --primary-color: #007bff;
@@ -29,16 +30,16 @@
             --error-color: #dc3545;
             --highlight-color: #cfe2ff;
         }
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
-            margin: 0; padding: 1.5em; color: #333; background-color: #f4f7f6; 
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0; padding: 1.5em; color: #333; background-color: #f4f7f6;
         }
         h1, h2 { color: #212529; border-bottom: 2px solid var(--primary-color); padding-bottom: 0.3em; margin-top: 2em; margin-bottom: 1em; }
         h1:first-of-type, h2:first-of-type { margin-top: 0; }
         .filter-bar { padding: 1em 1.5em; background-color: #fff; border-radius: 8px; box-shadow: var(--card-shadow); margin-bottom: 1.5em; display: flex; flex-wrap: wrap; gap: 1.5em; align-items: flex-start; }
         .filter-group { flex: 1 1 200px; }
         .filter-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; }
-        
+
         .date-filter-group { flex: 2 1 420px; min-width: 420px; }
         .date-filter-group fieldset { border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5em 1em 1em 1em; display: flex; gap: 1.5em; }
         .date-filter-group legend { font-weight: bold; font-size: 0.9em; padding: 0 0.5em; margin-left: 0.5em; color: #333; }
@@ -65,7 +66,7 @@
         .card-header-collapsible .card-title { font-weight: bold; }
         .card-content-collapsible { max-height: 1000px; overflow: hidden; transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out; padding: 0; }
         .card-content-collapsible.collapsed { max-height: 0; padding-top: 0; padding-bottom: 0; }
-        
+
         .chart-controls {
             display: flex;
             flex-wrap: wrap;
@@ -234,7 +235,7 @@
             transition: max-height 0.3s ease-in-out;
         }
         .legend-accordion-content.show {
-            max-height: 250px; 
+            max-height: 250px;
             overflow-y: auto;
         }
         .legend-controls {
@@ -282,7 +283,7 @@
         <div class="filter-group"><label for="species-filter">Scientific Name</label><select id="species-filter" class="filter-select" multiple="multiple"></select></div>
         <div class="filter-group"><label for="obs-filter">Observer</label><select id="obs-filter" class="filter-select" multiple="multiple"></select></div>
         <div class="filter-group"><label for="taxa-filter">Taxa</label><select id="taxa-filter" class="filter-select" multiple="multiple"></select></div>
-        
+
         <div class="date-filter-group">
             <fieldset>
                 <legend>Filter by Date</legend>
@@ -420,14 +421,12 @@
 
 <script>
 $(document).ready(function() {
-    const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '']);
-    const API_BASE_URL = LOCAL_HOSTS.has(window.location.hostname)
-        ? "http://127.0.0.1:8000"
-        : "https://biodiversity-dashboard-icck.onrender.com";
+    // Shared with polygon-analysis.html so deployment URLs cannot drift apart.
+    const API_BASE_URL = window.DASHBOARD_CONFIG.apiBaseUrl;
     const plotlyConfig = { responsive: true, displaylogo: false };
     const monthNames = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const MAP_MARKER_BATCH_SIZE = 500;
-    
+
     let isUpdatingFilters = false;
     let isInitialLoad = true;
     let filterUpdateTimer = null;
@@ -442,9 +441,9 @@ $(document).ready(function() {
     let geographicFilter = null;
     let mapDrilldownBbox = null;
     let currentMapData = [];
-    
+
     let markerLayers = {}, taxaLayerGroups = {}, taxaColors = {}, taxaVisibilityState = {};
-    let habitatLayer = null; 
+    let habitatLayer = null;
     let habitatLayerGroups = {}, habitatVisibilityState = {};
     let managementClusterGroup = null;
     let managementLayerGroups = {}, managementVisibilityState = {};
@@ -455,10 +454,10 @@ $(document).ready(function() {
     function initializeDashboard() {
         $('.filter-select').select2({ width: '100%', placeholder: 'All', allowClear: true });
         $('.filter-select-single').select2({ width: '100%', placeholder: 'All', allowClear: true });
-        
+
         $('#clear-filters').on('click', handleClearFilters);
         $('.filter-select, .filter-select-single').on('change', handleFilterChange);
-        
+
         $('#species-list-toggle').on('click', function() {
             const content = $(this).next('.card-content-collapsible');
             const icon = $(this).find('.icon');
@@ -468,7 +467,7 @@ $(document).ready(function() {
 
         initializeMap();
         if (window.lucide) lucide.createIcons();
-        
+
         const annualTrendsContainer = $('#annual-trends-container');
         annualTrendsContainer.on('click', '#annual-absolute-btn', drawAnnualChart);
         annualTrendsContainer.on('click', '#annual-standardized-btn', drawAnnualChart);
@@ -495,7 +494,7 @@ $(document).ready(function() {
         $('#clear-map-area').on('click', () => clearAreaFilter(true));
 
         const initialUpdatePromise = updateFilterOptions().then(updateAllDashboardComponents);
-        
+
         setTimeout(updateHabitatSummary, 150);
         setTimeout(updateAnnualTrends, 300);
         setTimeout(() => loadUniqueSpeciesTable(1), 450);
@@ -533,7 +532,7 @@ $(document).ready(function() {
         map.getPane('managementPane').style.zIndex = 400;
         map.createPane('cameraTrapPane');
         map.getPane('cameraTrapPane').style.zIndex = 410;
-        
+
         drawnItems = new L.FeatureGroup();
         map.addLayer(drawnItems);
         addAreaFilterControl();
@@ -554,7 +553,7 @@ $(document).ready(function() {
             const div = L.DomUtil.create('div', 'legend-container');
             L.DomEvent.disableClickPropagation(div);
             L.DomEvent.disableScrollPropagation(div);
-            
+
             div.innerHTML = `
                 <div id="species-legend" class="map-legend"></div>
                 <div id="habitat-legend" class="map-legend"></div>
@@ -832,7 +831,7 @@ $(document).ready(function() {
                     managementClusterGroup.addLayer(managementLayerGroups[type]);
                 }
             });
-            
+
             map.addLayer(managementClusterGroup);
             updateManagementLegend(types);
         }).fail(() => {
@@ -852,7 +851,7 @@ $(document).ready(function() {
                     <a data-type="management" data-action="none">Deselect All</a>
                 </div>
                 <div class="legend-scroll-content">`;
-        
+
         types.forEach(name => {
             const isChecked = managementVisibilityState[name] ? 'checked' : '';
             const color = getManagementStyle(name);
@@ -920,7 +919,7 @@ $(document).ready(function() {
                     cameraTrapClusterGroup.addLayer(cameraTrapLayerGroups[month]);
                 }
             });
-            
+
             map.addLayer(cameraTrapClusterGroup);
             updateCameraTrapLegend(months);
         }).fail(() => {
@@ -940,7 +939,7 @@ $(document).ready(function() {
                     <a data-type="cameratrap" data-action="none">Deselect All</a>
                 </div>
                 <div class="legend-scroll-content">`;
-        
+
         months.forEach(month => {
             const isChecked = cameraTrapVisibilityState[month] ? 'checked' : '';
             const color = getCameraTrapStyle(month);
@@ -964,14 +963,19 @@ $(document).ready(function() {
             map.removeLayer(habitatLayer);
             habitatLayer = null;
         }
-        
+
         return $.get(`${API_BASE_URL}/api/habitat_polygons`, { year: selectedYear }).done(data => {
             if (!data || !data.features) {
                 $('#habitat-legend').hide();
                 return;
             }
 
-            const classifications = [...new Set(data.features.map(f => f.properties['broad'] || "Unknown"))].sort();
+            const classifications = [...new Set(data.features.map(f => f.properties['broad'] || "Unknown"))]
+                .sort((a, b) => {
+                    if (a === 'Unknown') return 1;
+                    if (b === 'Unknown') return -1;
+                    return a.localeCompare(b);
+                });
             habitatLayerGroups = {};
             classifications.forEach(name => {
                 habitatLayerGroups[name] = L.layerGroup();
@@ -996,11 +1000,11 @@ $(document).ready(function() {
             });
 
             habitatLayer.addTo(map);
-            
+
             habitatBounds = habitatLayer.getBounds();
             updateHabitatLegend(classifications);
             checkAndFitBounds();
-            
+
         }).fail(() => {
             console.error("Could not load habitat polygons for year: " + selectedYear);
             $('#habitat-legend').hide();
@@ -1026,12 +1030,23 @@ $(document).ready(function() {
             case 'modified grassland': style.fillColor = '#00FF00'; break;
             case 'natural grassland': style.fillColor = '#ADFF2F'; break;
             case 'other developed land': style.fillColor = '#778899'; break;
-            case '(unsealed unvegetated surface)': style.fillColor = '#800080'; break;
+            case 'unsealed unvegetated surface': style.fillColor = '#800080'; break;
+            case 'unsealed vegetated surface': style.fillColor = '#9370DB'; break;
             case 'woodland': style.fillColor = '#228B22'; break;
-            default: style.fillColor = '#000000';
+            case 'Unknown':
+                style.fillColor = '#FFFFFF';
+                style.color = '#6B7280';
+                break;
+            default: style.fillColor = '#D1D5DB';
         }
-        style.color = style.fillColor;
+        if (!style.color) style.color = style.fillColor;
         return style;
+    }
+
+    function formatBiomscore(value) {
+        if (value == null || value === '') return 'N/A';
+        const score = Number(value);
+        return Number.isFinite(score) ? score.toFixed(2) : 'N/A';
     }
 
     function updateHabitatLegend(classifications) {
@@ -1045,7 +1060,7 @@ $(document).ready(function() {
                     <a data-type="habitat" data-action="none">Deselect All</a>
                 </div>
                 <div class="legend-scroll-content">`;
-        
+
         classifications.forEach(name => {
             const isChecked = habitatVisibilityState[name] ? 'checked' : '';
             const style = styleHabitat({ properties: { broad: name } });
@@ -1082,7 +1097,7 @@ $(document).ready(function() {
         const type = $(event.target).data('type');
         const action = $(event.target).data('action');
         const shouldBeChecked = action === 'all';
-        
+
         $(`.legend-item input[data-type="${type}"]`).prop('checked', shouldBeChecked).trigger('change');
     }
 
@@ -1407,7 +1422,7 @@ $(document).ready(function() {
 
     function setLoadingState(isLoading) {
         $('.error-message').remove();
-        const mainCards = $('.card:visible').not('#unique-species-table .card, #annual-trends-container, #habitat-summary-container, #annual-habitat-trends-container'); 
+        const mainCards = $('.card:visible').not('#unique-species-table .card, #annual-trends-container, #habitat-summary-container, #annual-habitat-trends-container');
         if (isLoading) {
             mainCards.append('<div class="loading-overlay"><span>Loading...</span></div>');
         } else {
@@ -1529,7 +1544,7 @@ $(document).ready(function() {
 
             const headerRow1 = $('<tr>');
             headerRow1.append('<th rowspan="2" style="vertical-align: middle;">Habitat</th>');
-            
+
             const headerRow2 = $('<tr>');
             const metricHeaders = ['Area (ha)', 'Area (%)', 'Biomscore', 'No. 10m Squares', 'Squares (%)'];
 
@@ -1549,7 +1564,7 @@ $(document).ready(function() {
                     if (metrics) {
                         row.append(`<td style="text-align:right;">${metrics.areaha.toFixed(1)}</td>`);
                         row.append(`<td style="text-align:right;">${metrics.percent_area.toFixed(1)}%</td>`);
-                        row.append(`<td style="text-align:right;">${Math.round(metrics.biomscore).toLocaleString()}</td>`);
+                        row.append(`<td style="text-align:right;">${formatBiomscore(metrics.biomscore)}</td>`);
                         row.append(`<td style="text-align:right;">${metrics.no10msquares.toLocaleString()}</td>`);
                         row.append(`<td style="text-align:right;">${metrics.percent_squares.toFixed(1)}%</td>`);
                     } else {
@@ -1566,7 +1581,7 @@ $(document).ready(function() {
                 if (totals) {
                     totalRow.append(`<td style="text-align:right;">${totals.areaha.toFixed(1)}</td>`);
                     totalRow.append(`<td style="text-align:right;">${totals.percent_area.toFixed(1)}%</td>`);
-                    totalRow.append(`<td style="text-align:right;">${Math.round(totals.biomscore).toLocaleString()}</td>`);
+                    totalRow.append(`<td style="text-align:right;">${formatBiomscore(totals.biomscore)}</td>`);
                     totalRow.append(`<td style="text-align:right;">${totals.no10msquares.toLocaleString()}</td>`);
                     totalRow.append(`<td style="text-align:right;">${totals.percent_squares.toFixed(1)}%</td>`);
                 } else {
@@ -1660,9 +1675,9 @@ $(document).ready(function() {
             };
         }
 
-        const trace = [{ 
-            x: years, 
-            y: chartValues, 
+        const trace = [{
+            x: years,
+            y: chartValues,
             type: 'bar',
             hovertemplate: '<b>Year: %{x}</b><br>Value: %{y:.2f}<extra></extra>'
         }];
@@ -1681,7 +1696,7 @@ $(document).ready(function() {
         years.forEach((year, index) => {
             const areaHa = areaHaValues[index];
             const areaPercent = areaPercentValues[index];
-            
+
             const formattedAreaHa = Number.isInteger(areaHa) ? areaHa.toLocaleString() : areaHa.toFixed(2);
             const formattedAreaPercent = Number.isInteger(areaPercent) ? areaPercent.toLocaleString() : areaPercent.toFixed(2);
 
@@ -1712,7 +1727,7 @@ $(document).ready(function() {
             if (!data || data.length === 0) { container.closest('.card').hide(); return; }
             container.closest('.card').show();
             container.empty();
-            const sortedData = data.slice().reverse(); 
+            const sortedData = data.slice().reverse();
             const speciesNames = sortedData.map(d => d.name);
             const chartHeight = 150 + (speciesNames.length * 35);
             container.height(chartHeight);
@@ -1742,7 +1757,7 @@ $(document).ready(function() {
 
     function updateTemporalChart(filters) {
         const container = $('#temporal-chart-container');
-        container.height(500); 
+        container.height(500);
         return $.get(`${API_BASE_URL}/api/summary/temporal_trends`, filters).done(data => {
             if (Object.keys(data).length === 0) { container.closest('.card').hide(); return; }
             container.closest('.card').show();
@@ -1808,7 +1823,7 @@ $(document).ready(function() {
                 return;
             }
             annualData = data.trends;
-            
+
             const tableBody = $('#annual-trends-table tbody').empty();
             annualData.forEach(yearData => {
                 const row = `<tr>
@@ -1820,7 +1835,7 @@ $(document).ready(function() {
                 </tr>`;
                 tableBody.append(row);
             });
-            
+
             drawAnnualChart();
 
         }).fail(() => {
@@ -1838,14 +1853,14 @@ $(document).ready(function() {
         }
 
         const chartDiv = 'annual-trends-chart';
-        
+
         const selectedMetricKey = $('#annual-metric-select').val();
         const selectedMetricText = $('#annual-metric-select option:selected').text();
         const mode = $('#annual-standardized-btn').hasClass('active') ? 'standardized' : 'absolute';
 
         const years = annualData.map(d => d.year);
         const rawValues = annualData.map(d => d[selectedMetricKey]);
-        
+
         let chartValues;
         let layout;
 
@@ -1857,10 +1872,10 @@ $(document).ready(function() {
                 xaxis: { type: 'category', title: 'Year' },
                 margin: { t: 50, b: 40, l: 60, r: 20 }
             };
-        } else { 
+        } else {
             const baseValue = rawValues[0];
             chartValues = baseValue > 0 ? rawValues.map(d => (d / baseValue) * 100) : rawValues.map(() => 0);
-            
+
             layout = {
                 title: { text: `<b>${selectedMetricText} Growth (First Year = 100)</b>`, font: { size: 18 } },
                 yaxis: { title: 'Growth Index', ticksuffix: '%' },
@@ -1869,9 +1884,9 @@ $(document).ready(function() {
             };
         }
 
-        const trace = [{ 
-            x: years, 
-            y: chartValues, 
+        const trace = [{
+            x: years,
+            y: chartValues,
             type: 'bar',
             hovertemplate: '<b>Year: %{x}</b><br>Value: %{y:.3f}<extra></extra>'
         }];
@@ -1900,7 +1915,7 @@ $(document).ready(function() {
         const prevButton = $('<button>« Previous</button>').on('click', () => loadUniqueSpeciesTable(page - 1)).prop('disabled', page === 1);
         const nextButton = $('<button>Next »</button>').on('click', () => loadUniqueSpeciesTable(page + 1)).prop('disabled', page === totalPages);
         const lastButton = $('<button>Last</button>').on('click', () => loadUniqueSpeciesTable(totalPages)).prop('disabled', page === totalPages);
-        
+
         container.append(firstButton, prevButton, `<span> Page ${page} of ${totalPages} </span>`, nextButton, lastButton);
     }
 

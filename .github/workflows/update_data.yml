@@ -4,9 +4,16 @@ on:
   repository_dispatch:
     types: [new-gpkg-file]
 
+# Every generated-data workflow uses this group so two runs cannot push
+# different snapshots of main at the same time.
+concurrency:
+  group: dashboard-generated-data-writes
+  cancel-in-progress: false
+
 jobs:
   build-and-commit:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     permissions:
       contents: write
@@ -28,17 +35,14 @@ jobs:
       - name: Install Python packages
         run: |
           pip install --upgrade pip
-          pip install --upgrade "gdown>=4.7.0"
-          pip install -r requirements.txt
-      - name: Install Google API Python Client
-        run: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
+          pip install -r requirements.txt -r requirements-workflows.txt
 
       - name: Authenticate to Google Drive
         run: echo '${{ secrets.GDRIVE_CREDENTIALS_DATA }}' > gdrive-credentials.json
 
       - name: Download .gpkg file from Google Drive (service account)
         run: python download_from_gdrive.py "${{ github.event.client_payload.file_id }}" "data.gpkg"
-      
+
       - name: Run data conversion script
         run: python gpkgtoparquet.py data.gpkg
 
@@ -46,11 +50,12 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          # --- CHANGED: The path to data.parquet now includes the 'data/' directory. ---
+          # Generated data and the shared species cache must be committed together.
           git add data/data.parquet species_api_cache.csv
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
             git commit -m "Chore: Update Parquet data and API cache"
-            git push
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
           fi

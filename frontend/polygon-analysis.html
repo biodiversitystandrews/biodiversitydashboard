@@ -15,6 +15,7 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <script src="dashboard-config.js"></script>
 
     <style>
         :root {
@@ -153,13 +154,13 @@
             cursor: help;
         }
 
-        .map-layer-info::after {
-            content: attr(data-tooltip);
-            position: absolute;
-            z-index: 1000;
-            left: 50%;
-            bottom: calc(100% + 9px);
-            width: min(310px, 75vw);
+        .information-tooltip {
+            position: fixed;
+            z-index: 10000;
+            width: min(310px, calc(100vw - 32px));
+            max-height: calc(100vh - 32px);
+            overflow-y: auto;
+            box-sizing: border-box;
             padding: 10px 12px;
             border-radius: 4px;
             background: #212529;
@@ -167,18 +168,10 @@
             font: 400 13px/1.4 Arial, sans-serif;
             text-align: left;
             white-space: normal;
-            opacity: 0;
-            visibility: hidden;
-            pointer-events: none;
-            transform: translateX(-50%);
+            pointer-events: auto;
         }
 
-        .map-layer-info:hover::after,
-        .map-layer-info:focus-visible::after,
-        .map-layer-info.is-open::after {
-            opacity: 1;
-            visibility: visible;
-        }
+        .information-tooltip[hidden] { display: none; }
 
         .hotspot-keys {
             display: none;
@@ -306,11 +299,6 @@
             font-size: 12px;
         }
 
-        .metric-info::after {
-            left: 0;
-            transform: none;
-        }
-
         .result-actions {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -407,9 +395,9 @@
             font-weight: 700;
         }
 
-        .concern-low { background: var(--success-color); }
+        .concern-low { background: var(--danger-color); }
         .concern-moderate { background: var(--warning-color); }
-        .concern-high { background: var(--danger-color); }
+        .concern-high { background: var(--success-color); }
         .concern-insufficient { background: var(--secondary-color); }
 
         .note {
@@ -583,7 +571,7 @@
                         class="map-layer-info"
                         aria-label="Explain the Biodiversity Index grid"
                         aria-expanded="false"
-                        data-tooltip="Compares unique species per observation record between estate grid cells. Red cells rank highest, amber cells are intermediate, green cells rank lower, and grey cells do not have enough observations for classification."
+                        data-tooltip="Compares unique species per observation record between estate grid cells. Red cells rank lower, amber cells are intermediate, green cells rank higher, and grey cells do not have enough observations for classification."
                     >i</button>
                 </span>
                 <span class="map-layer-option">
@@ -596,7 +584,7 @@
                         class="map-layer-info"
                         aria-label="Explain the observation effort grid"
                         aria-expanded="false"
-                        data-tooltip="Shows where observation records are concentrated. Darker blue cells have more records relative to other estate cells. Pale cells may be under-surveyed and do not necessarily have low biodiversity."
+                        data-tooltip="Shows where observation records are concentrated. Red cells have lower survey effort, amber cells are intermediate, and green cells have higher effort. Low effort does not necessarily mean low biodiversity."
                     >i</button>
                 </span>
             </div>
@@ -606,15 +594,15 @@
             <div id="biodiversity-hotspot-key" class="hotspot-key">
                 <span class="hotspot-key-title">Biodiversity Index:</span>
                 <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#7a7a7a"></span>Not enough observations</span>
-                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#1b9e77"></span>Lower</span>
+                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#d73027"></span>Lower</span>
                 <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#ffb000"></span>Moderate</span>
-                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#d73027"></span>High</span>
+                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#1b9e77"></span>High</span>
             </div>
             <div id="effort-hotspot-key" class="hotspot-key">
                 <span class="hotspot-key-title">Observation effort:</span>
-                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#c9efff"></span>Lower</span>
-                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#168aad"></span>Moderate</span>
-                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#081d58"></span>High</span>
+                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#d73027"></span>Lower</span>
+                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#ffb000"></span>Moderate</span>
+                <span class="hotspot-key-item"><span class="hotspot-swatch" style="background:#1b9e77"></span>High</span>
             </div>
         </div>
     </div>
@@ -664,6 +652,8 @@
         </div>
     </div>
 
+    <div id="information-tooltip" class="information-tooltip" role="tooltip" hidden></div>
+
     <div id="result-table-modal" class="result-modal hidden" role="dialog" aria-modal="true" aria-labelledby="result-table-title">
         <div class="result-modal-content">
             <div class="result-modal-header">
@@ -683,10 +673,8 @@
 $(document).ready(function() {
     // Use the local URL while testing. Change this back to the Render URL before public deployment.
     // Use the local API while testing and the deployed API everywhere else.
-    const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '']);
-    const API_BASE_URL = LOCAL_HOSTS.has(window.location.hostname)
-        ? "http://127.0.0.1:8000"
-        : "https://biodiversity-dashboard-icck.onrender.com";
+    // Shared with index.html so deployment URLs cannot drift apart.
+    const API_BASE_URL = window.DASHBOARD_CONFIG.apiBaseUrl;
 
     const RANDOM_POLYGON_BATCH_SIZE = 5;
     const POINT_CHECK_BATCH_SIZE = 2000;
@@ -784,13 +772,21 @@ $(document).ready(function() {
         $('#effort-hotspot-toggle').on('change', event => {
             setHotspotLayerVisibility('effort', event.target.checked);
         });
+        $(document).on('mouseenter focusin', '.map-layer-info', function() {
+            showInformationTooltip(this);
+        });
+        $(document).on('mouseleave focusout', '.map-layer-info', function() {
+            if (!$(this).hasClass('is-open')) hideInformationTooltip();
+        });
         $(document).on('click', '.map-layer-info', function(event) {
             const shouldOpen = !$(this).hasClass('is-open');
             closeMapLayerInformation();
             $(this)
                 .toggleClass('is-open', shouldOpen)
                 .attr('aria-expanded', String(shouldOpen));
+            if (shouldOpen) showInformationTooltip(this);
         });
+        $(window).on('resize scroll', closeMapLayerInformation);
         $(document).on('click', event => {
             if (!$(event.target).closest('.map-layer-info').length) {
                 closeMapLayerInformation();
@@ -814,7 +810,44 @@ $(document).ready(function() {
     function closeMapLayerInformation() {
         $('.map-layer-info')
             .removeClass('is-open')
-            .attr('aria-expanded', 'false');
+            .attr('aria-expanded', 'false')
+            .removeAttr('aria-describedby');
+        hideInformationTooltip();
+    }
+
+    function showInformationTooltip(button) {
+        const tooltip = document.getElementById('information-tooltip');
+        tooltip.textContent = button.dataset.tooltip || '';
+        tooltip.hidden = false;
+        button.setAttribute('aria-describedby', 'information-tooltip');
+        positionInformationTooltip(button, tooltip);
+    }
+
+    function hideInformationTooltip() {
+        document.getElementById('information-tooltip').hidden = true;
+    }
+
+    function positionInformationTooltip(button, tooltip) {
+        const rect = button.getBoundingClientRect();
+        const viewportPadding = 16;
+        const gap = 9;
+        const viewportWidth = document.documentElement.clientWidth;
+        const viewportHeight = document.documentElement.clientHeight;
+
+        tooltip.style.left = `${viewportPadding}px`;
+        tooltip.style.top = `${viewportPadding}px`;
+        const tooltipRect = tooltip.getBoundingClientRect();
+        const centredLeft = rect.left + rect.width / 2 - tooltipRect.width / 2;
+        const maximumLeft = viewportWidth - tooltipRect.width - viewportPadding;
+        const left = Math.max(viewportPadding, Math.min(centredLeft, maximumLeft));
+        const above = rect.top - tooltipRect.height - gap;
+        const below = rect.bottom + gap;
+        const preferredTop = above >= viewportPadding ? above : below;
+        const maximumTop = viewportHeight - tooltipRect.height - viewportPadding;
+        const top = Math.max(viewportPadding, Math.min(preferredTop, maximumTop));
+
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
     }
 
     function initializeMap() {
@@ -1111,9 +1144,9 @@ $(document).ready(function() {
         if (metric === 'biodiversity') {
             const colors = {
                 insufficient_data: '#7a7a7a',
-                lower: '#1b9e77',
+                lower: '#d73027',
                 moderate: '#ffb000',
-                high: '#d73027'
+                high: '#1b9e77'
             };
             return {
                 color: '#343a40',
@@ -1125,9 +1158,9 @@ $(document).ready(function() {
 
         const percentile = Number(properties.effort_percentile) || 0;
         return {
-            color: percentile >= 75 ? '#020817' : '#15546a',
+            color: '#343a40',
             weight: 1,
-            fillColor: percentile >= 75 ? '#081d58' : percentile >= 40 ? '#168aad' : '#c9efff',
+            fillColor: percentile >= 75 ? '#1b9e77' : percentile >= 40 ? '#ffb000' : '#d73027',
             fillOpacity: 0.62
         };
     }
@@ -1603,7 +1636,7 @@ $(document).ready(function() {
                 className: 'concern-insufficient',
                 color: '#6c757d',
                 score: null,
-                note: `This area needs at least ${MIN_RECORDS_FOR_CONCERN} records across ${MIN_SURVEY_DAYS_FOR_CONCERN} survey days before biodiversity concern can be interpreted reliably.`
+                note: `This area needs at least ${MIN_RECORDS_FOR_CONCERN} records across ${MIN_SURVEY_DAYS_FOR_CONCERN} survey days before its relative biodiversity value can be interpreted reliably.`
             };
         }
 
@@ -1628,7 +1661,7 @@ $(document).ready(function() {
             return {
                 label: 'High',
                 className: 'concern-high',
-                color: '#c92a2a',
+                color: '#2e7d32',
                 score,
                 note: 'Both species richness and the effort-adjusted Biodiversity Index rank strongly against sufficiently surveyed comparison areas.'
             };
@@ -1647,7 +1680,7 @@ $(document).ready(function() {
         return {
             label: 'Lower',
             className: 'concern-low',
-            color: '#2e7d32',
+            color: '#c92a2a',
             score,
             note: 'The combined species-richness and effort-adjusted index ranking is lower than many sufficiently surveyed comparison areas.'
         };
@@ -1669,6 +1702,13 @@ $(document).ready(function() {
         });
 
         return Object.values(speciesMap).sort((a, b) => b.records - a.records || a.species.localeCompare(b.species));
+    }
+
+    function metricLabel(label, tooltip) {
+        return `<span class="metric-label">
+            ${escapeHtml(label)}
+            <button type="button" class="map-layer-info metric-info" aria-label="Explain ${escapeHtml(label)}" aria-expanded="false" data-tooltip="${escapeHtml(tooltip)}">i</button>
+        </span>`;
     }
 
     function renderSummary(summary) {
@@ -1701,8 +1741,8 @@ $(document).ready(function() {
         $('#metric-grid').html(`
             <div class="metric-row">
                 <span class="metric-label">
-                    Biodiversity concern
-                    <button type="button" class="map-layer-info metric-info" aria-label="Explain biodiversity concern" aria-expanded="false" data-tooltip="A colour-coded interpretation of the relative biodiversity ranking. Lower, Moderate and High describe how this area compares with sufficiently surveyed random areas of the same shape and size. It supports ecological review and is not a construction decision.">i</button>
+                    Relative biodiversity value
+                    <button type="button" class="map-layer-info metric-info" aria-label="Explain relative biodiversity value" aria-expanded="false" data-tooltip="A colour-coded interpretation of the relative biodiversity ranking. Red means lower, amber means moderate and green means higher compared with sufficiently surveyed random areas of the same shape and size.">i</button>
                 </span>
                 <b><span class="concern-label ${summary.concern.className}">${summary.concern.label}</span></b>
             </div>
@@ -1720,30 +1760,30 @@ $(document).ready(function() {
                 </span>
                 <b>${biodiversityIndex}</b>
             </div>
-            <div class="metric-row"><span>Observation records</span><b>${summary.totalRecords.toLocaleString()}</b></div>
-            <div class="metric-row"><span>Unique species</span><b>${summary.uniqueSpecies.toLocaleString()}</b></div>
-            <div class="metric-row"><span>Taxa groups</span><b>${summary.taxaGroups.toLocaleString()}</b></div>
-            <div class="metric-row"><span>Survey days</span><b>${summary.surveyDays.toLocaleString()}</b></div>
-            <div class="metric-row"><span>Observers</span><b>${summary.observers.toLocaleString()}</b></div>
+            <div class="metric-row">${metricLabel('Observation records', 'The number of individual observation records whose exact recorded coordinates fall inside the drawn polygon.')}<b>${summary.totalRecords.toLocaleString()}</b></div>
+            <div class="metric-row">${metricLabel('Unique species', 'The number of distinct scientific species names recorded inside the drawn polygon.')}<b>${summary.uniqueSpecies.toLocaleString()}</b></div>
+            <div class="metric-row">${metricLabel('Taxa groups', 'The number of distinct broad taxonomic groups represented, such as birds, mammals or angiosperms.')}<b>${summary.taxaGroups.toLocaleString()}</b></div>
+            <div class="metric-row">${metricLabel('Survey days', 'The number of distinct calendar dates on which observations were recorded inside the polygon.')}<b>${summary.surveyDays.toLocaleString()}</b></div>
+            <div class="metric-row">${metricLabel('Observers', 'The number of distinct named observers represented by records inside the polygon.')}<b>${summary.observers.toLocaleString()}</b></div>
             <details class="rank-details">
                 <summary><span>Comparison rankings</span><span class="rank-summary">${rankSummary}</span></summary>
                 <div class="rank-content">
                     <p class="rank-help">${summary.randomComparison.samples > 0
                         ? `Effort rankings compare this polygon with ${sampleDisplay} randomly positioned and rotated polygons of the same shape and size. Biodiversity rankings use the ${biodiversitySamples.toLocaleString()} comparison areas containing at least ${MIN_RECORDS_FOR_CONCERN} records across ${MIN_SURVEY_DAYS_FOR_CONCERN} survey days. “Higher than 42%” means 42% of those comparison areas had a lower result. All ${summary.randomComparison.samples.toLocaleString()} accepted comparison polygons are drawn on the map and included in the calculations.`
                         : 'No valid same-size random comparison polygons were generated. The selected-area statistics remain valid, but relative rankings cannot be shown. Try 100 comparisons or draw a smaller area.'}</p>
-                    <div class="metric-row"><span>Biodiversity Index</span><b>${indexRank}</b></div>
-                    <div class="metric-row"><span>Observation records / effort</span><b>${recordsRank}</b></div>
-                    <div class="metric-row"><span>Unique species</span><b>${speciesRank}</b></div>
-                    <div class="metric-row"><span>Taxa groups</span><b>${taxaRank}</b></div>
-                    <div class="metric-row"><span>Survey days</span><b>${surveyDaysRank}</b></div>
-                    <div class="metric-row"><span>Observers</span><b>${observersRank}</b></div>
+                    <div class="metric-row">${metricLabel('Biodiversity Index rank', 'Where the focal polygon’s Biodiversity Index falls relative to sufficiently surveyed comparison polygons.')}<b>${indexRank}</b></div>
+                    <div class="metric-row">${metricLabel('Observation effort rank', 'Where the number of records in the focal polygon falls relative to all accepted comparison polygons.')}<b>${recordsRank}</b></div>
+                    <div class="metric-row">${metricLabel('Unique-species rank', 'Where species richness in the focal polygon falls relative to sufficiently surveyed comparison polygons.')}<b>${speciesRank}</b></div>
+                    <div class="metric-row">${metricLabel('Taxa-groups rank', 'Where the number of taxa groups falls relative to sufficiently surveyed comparison polygons.')}<b>${taxaRank}</b></div>
+                    <div class="metric-row">${metricLabel('Survey-days rank', 'Where the number of survey dates falls relative to all accepted comparison polygons.')}<b>${surveyDaysRank}</b></div>
+                    <div class="metric-row">${metricLabel('Observer rank', 'Where the number of distinct observers falls relative to all accepted comparison polygons.')}<b>${observersRank}</b></div>
                     <div class="comparison-method"><b>Comparison method:</b> ${escapeHtml(summary.randomComparison.method || 'N/A')}<br><b>Habitat strata represented:</b> ${strataRepresented || 'N/A'}</div>
                 </div>
             </details>
-            <div class="metric-row"><span>High biodiversity-hotspot overlap</span><b>${biodiversityHotspot.high}</b></div>
-            <div class="metric-row"><span>Moderate hotspot overlap</span><b>${biodiversityHotspot.moderate}</b></div>
-            <div class="metric-row"><span>High survey-effort overlap</span><b>${effortHotspot.high}</b></div>
-            <div class="metric-row"><span>Random comparisons analysed</span><b>${sampleDisplay}</b></div>
+            <div class="metric-row">${metricLabel('High biodiversity-hotspot overlap', 'The percentage of the drawn polygon’s area that overlaps grid cells classified as high for the Biodiversity Index. This is an area percentage, not a percentage of records.')}<b>${biodiversityHotspot.high}</b></div>
+            <div class="metric-row">${metricLabel('Moderate hotspot overlap', 'The percentage of the drawn polygon’s area that overlaps grid cells classified as moderate for the Biodiversity Index.')}<b>${biodiversityHotspot.moderate}</b></div>
+            <div class="metric-row">${metricLabel('High survey-effort overlap', 'The percentage of the drawn polygon’s area that overlaps grid cells classified as having high observation effort.')}<b>${effortHotspot.high}</b></div>
+            <div class="metric-row">${metricLabel('Random comparisons analysed', 'The number of accepted same-shape, same-size random polygons used in the comparison rankings.')}<b>${sampleDisplay}</b></div>
         `);
         $('#concern-note').text(summary.concern.note);
         $('#download-comparison-results').prop(

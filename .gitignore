@@ -1,4 +1,19 @@
 __pycache__/
 *.pyc
+.pytest_cache/
+.coverage
+.DS_Store
 .env
 .venv
+
+# Workflow credentials are reconstructed from GitHub Secrets and must never be committed.
+gdrive-credentials.json
+credentials.json
+
+# Raw uploads and extracted workflow inputs are temporary. Generated dashboard
+# Parquet/GeoJSON/JSON files under data/ remain versioned intentionally.
+*.gpkg
+*.gpkg-shm
+*.gpkg-wal
+*.xlsx
+*.zip
