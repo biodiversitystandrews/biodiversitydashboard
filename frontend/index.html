@@ -376,6 +376,7 @@
                 <select id="habitat-trend-metric-select">
                     <option value="areaha" selected>Area (ha)</option>
                     <option value="percent_area">Area (%)</option>
+                    <option value="biomscore">Biomscore</option>
                 </select>
             </div>
             <div class="control-group">
@@ -1650,6 +1651,7 @@ $(document).ready(function() {
         habitatSelect.empty();
 
         habitatSelect.append(new Option('Total', 'Total'));
+        habitatSelect.append(new Option('Average Biomscore', '__average_biomscore__'));
 
         habitatSummaryData.habitats.forEach(habitat => {
             habitatSelect.append(new Option(habitat.name, habitat.name));
@@ -1670,13 +1672,31 @@ $(document).ready(function() {
         }
 
         const selectedHabitat = $('#habitat-trend-habitat-select').val();
-        const selectedMetric = $('#habitat-trend-metric-select').val();
-        const selectedMetricText = $('#habitat-trend-metric-select option:selected').text();
-        const mode = $('#habitat-trend-standardized-btn').hasClass('active') ? 'standardized' : 'absolute';
+        const isAverageBiomscore = selectedHabitat === '__average_biomscore__';
+        const metricSelect = $('#habitat-trend-metric-select');
+        const standardizedButton = $('#habitat-trend-standardized-btn');
+
+        if (isAverageBiomscore) {
+            metricSelect.val('biomscore').prop('disabled', true);
+            standardizedButton.prop('disabled', true).removeClass('active');
+            $('#habitat-trend-absolute-btn').addClass('active');
+        } else {
+            metricSelect.prop('disabled', false);
+            standardizedButton.prop('disabled', false);
+        }
+
+        const selectedMetric = metricSelect.val();
+        const selectedMetricText = isAverageBiomscore
+            ? 'Average Biomscore'
+            : metricSelect.find('option:selected').text();
+        const selectedHabitatText = isAverageBiomscore
+            ? 'All habitats'
+            : $('#habitat-trend-habitat-select option:selected').text();
+        const mode = standardizedButton.hasClass('active') ? 'standardized' : 'absolute';
         const years = habitatSummaryData.years;
 
         let sourceData;
-        if (selectedHabitat === 'Total') {
+        if (selectedHabitat === 'Total' || isAverageBiomscore) {
             sourceData = habitatSummaryData.totals;
         } else {
             sourceData = habitatSummaryData.habitats.find(h => h.name === selectedHabitat)?.metrics;
@@ -1688,8 +1708,6 @@ $(document).ready(function() {
         }
 
         const chartRawValues = years.map(year => sourceData[year] ? sourceData[year][selectedMetric] : 0);
-        const tableAreaHaValues = years.map(year => sourceData[year] ? sourceData[year]['areaha'] : 0);
-        const tableAreaPercentValues = years.map(year => sourceData[year] ? sourceData[year]['percent_area'] : 0);
 
         let chartValues;
         let layout;
@@ -1697,8 +1715,10 @@ $(document).ready(function() {
         if (mode === 'absolute') {
             chartValues = chartRawValues;
             layout = {
-                title: { text: `<b>${selectedHabitat} - ${selectedMetricText} (Absolute)</b>`, font: { size: 18 } },
-                yaxis: { title: selectedMetricText },
+                title: { text: `<b>${selectedHabitatText} - ${selectedMetricText} (Absolute)</b>`, font: { size: 18 } },
+                yaxis: selectedMetric === 'biomscore'
+                    ? { title: selectedMetricText, range: [0, 3], dtick: 0.5 }
+                    : { title: selectedMetricText },
                 xaxis: { type: 'category', title: 'Year' },
                 margin: { t: 50, b: 40, l: 60, r: 20 }
             };
@@ -1706,7 +1726,7 @@ $(document).ready(function() {
             const baseValue = chartRawValues[0];
             chartValues = baseValue > 0 ? chartRawValues.map(d => (d / baseValue) * 100) : chartRawValues.map(() => 0);
             layout = {
-                title: { text: `<b>${selectedHabitat} - ${selectedMetricText} Growth (First Year = 100)</b>`, font: { size: 18 } },
+                title: { text: `<b>${selectedHabitatText} - ${selectedMetricText} Growth (First Year = 100)</b>`, font: { size: 18 } },
                 yaxis: { title: 'Growth Index', ticksuffix: '%' },
                 xaxis: { type: 'category', title: 'Year' },
                 margin: { t: 50, b: 40, l: 60, r: 20 }
@@ -1721,14 +1741,28 @@ $(document).ready(function() {
         }];
         Plotly.newPlot('annual-habitat-trends-chart', trace, plotlyConfig);
 
-        updateHabitatTrendTable(years, tableAreaHaValues, tableAreaPercentValues);
+        updateHabitatTrendTable(years, sourceData, selectedMetric);
     }
 
-    function updateHabitatTrendTable(years, areaHaValues, areaPercentValues) {
+    function updateHabitatTrendTable(years, sourceData, selectedMetric) {
         const table = $('#annual-habitat-trends-table');
         const thead = table.find('thead').empty();
         const tbody = table.find('tbody').empty();
 
+        if (selectedMetric === 'biomscore') {
+            thead.append('<tr><th>Year</th><th>Average Biomscore</th></tr>');
+            years.forEach(year => {
+                const value = sourceData[year]?.biomscore;
+                tbody.append(`<tr>
+                    <td><b>${year}</b></td>
+                    <td style="text-align:right;">${formatBiomscore(value)}</td>
+                </tr>`);
+            });
+            return;
+        }
+
+        const areaHaValues = years.map(year => sourceData[year]?.areaha || 0);
+        const areaPercentValues = years.map(year => sourceData[year]?.percent_area || 0);
         thead.append(`<tr><th>Year</th><th>Area (ha)</th><th>Area (%)</th></tr>`);
 
         years.forEach((year, index) => {

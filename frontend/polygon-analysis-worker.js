@@ -44,7 +44,8 @@ self.onmessage = event => {
                 message.requestId,
                 message.polygon,
                 Number(message.targetCount) || 250,
-                Number(message.seed) || 1
+                Number(message.seed) || 1,
+                message.year || null
             ).catch(error => postAnalysisError(message.requestId, error));
         }
     } catch (error) {
@@ -85,6 +86,7 @@ function buildPointGrid(points) {
             species: point.species || null,
             taxa: point.taxa || null,
             obs: point.obs || null,
+            year: point.year || null,
             surveyDay: normaliseSurveyDay(point.Date)
         };
         const key = gridKey(gridCoordinate(lng), gridCoordinate(lat));
@@ -133,8 +135,8 @@ function buildHabitatStrata(features) {
     return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function analyseRandomPolygons(requestId, polygon, targetCount, seed) {
-    const focalPoints = getPointsInPolygon(polygon);
+async function analyseRandomPolygons(requestId, polygon, targetCount, seed, year) {
+    const focalPoints = getPointsInPolygon(polygon, year);
     const focalStats = calculatePolygonStatsFromPoints(focalPoints);
     const estateBounds = getRandomPlacementBounds();
     const randomStats = [];
@@ -204,7 +206,7 @@ async function analyseRandomPolygons(requestId, polygon, targetCount, seed) {
                 habitatStratum: acceptedStratum,
                 centroidLongitude: centroid[0],
                 centroidLatitude: centroid[1],
-                ...calculatePolygonStats(movedPolygon)
+                ...calculatePolygonStats(movedPolygon, year)
             });
             strataCounts[acceptedStratum] = (strataCounts[acceptedStratum] || 0) + 1;
             currentStratumFailures = 0;
@@ -370,14 +372,15 @@ function getCandidatesFromGrid(bbox) {
     return candidates;
 }
 
-function getPointsInPolygon(polygon) {
+function getPointsInPolygon(polygon, year = null) {
     const bbox = turf.bbox(polygon);
     return getCandidatesFromGrid(bbox)
         .filter(point =>
             point.lng >= bbox[0] &&
             point.lng <= bbox[2] &&
             point.lat >= bbox[1] &&
-            point.lat <= bbox[3]
+            point.lat <= bbox[3] &&
+            (!year || point.year === year)
         )
         .filter(point => turf.booleanPointInPolygon(
             turf.point([point.lng, point.lat]),
@@ -385,8 +388,8 @@ function getPointsInPolygon(polygon) {
         ));
 }
 
-function calculatePolygonStats(polygon) {
-    return calculatePolygonStatsFromPoints(getPointsInPolygon(polygon));
+function calculatePolygonStats(polygon, year = null) {
+    return calculatePolygonStatsFromPoints(getPointsInPolygon(polygon, year));
 }
 
 function calculatePolygonStatsFromPoints(points) {

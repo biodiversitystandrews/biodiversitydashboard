@@ -184,6 +184,25 @@ The user draws a focal polygon and the tool calculates:
 - A species summary table
 - A records table
 
+Single-area mode preserves the original workflow. Two-area mode accepts two
+sequential polygons and presents their summaries side by side. Each polygon has
+an independent observation-year filter; **Reuse Polygon 1 Shape** creates an
+identical second geometry for a like-for-like comparison between years. Once
+both results are available, the page reports Polygon 2 minus Polygon 1 for the
+Biodiversity Index, records, unique species, taxa groups, survey days, and
+observers. Positive values mean Polygon 2 is higher and negative values mean it
+is lower; these observational differences are not by themselves evidence of a
+change in ecological condition.
+
+Every polygon also reports a removal scenario calculated by the backend using
+the same KPI function as the main dashboard. It compares the selected annual or
+all-years dataset before removal with the dataset remaining after records whose
+exact coordinates fall inside the polygon are excluded. This describes a data
+removal scenario and must not be presented as a prediction that development
+would physically remove every recorded species. The removal table reports the
+with-area value, without-area value, and change for observation records, unique
+species, Shannon diversity, and Gini-Simpson diversity.
+
 ### Biodiversity Index
 
 The project-defined Biodiversity Index is:
@@ -227,6 +246,10 @@ The colour categories show relative biodiversity value compared with sufficientl
 
 The interface should distinguish biodiversity value from evidence confidence. Low survey effort must not be presented as evidence of low biodiversity value.
 
+Hotspot files currently combine all observation years. Annual polygon results
+therefore omit hotspot-overlap percentages rather than labelling all-years cells
+as annual evidence.
+
 Grey requires at least five records across at least two distinct survey days. High requires a combined Biodiversity Index and species-richness score of at least 75, with both component percentiles at least 60. Moderate begins at a combined score of 40. These project thresholds must be reviewed with ecological specialists before being used in formal decision-making.
 
 The observation-effort grid uses the same traffic-light direction: red for lower effort, amber for moderate effort and green for higher effort. Lower effort identifies a need for more recording; it is not evidence of lower biodiversity.
@@ -243,6 +266,7 @@ The API is implemented in `main.py`. Important endpoints include:
 | `/api/record_page` | Locate the page containing one record |
 | `/api/map_data` | Filtered map points or aggregated overview locations |
 | `/api/polygon-analysis-data` | Cached unfiltered fields required by the polygon tool |
+| `/api/polygon-removal-summary` | KPIs before and after excluding records inside a polygon |
 | `/api/hotspots/biodiversity` | Precomputed biodiversity hotspot cells |
 | `/api/hotspots/effort` | Precomputed survey-effort hotspot cells |
 | `/api/summary/diversity` | Richness and diversity statistics |
@@ -252,6 +276,10 @@ The API is implemented in `main.py`. Important endpoints include:
 | `/api/habitat_polygons` | Habitat GeoJSON |
 | `/api/estate-boundary` | Pre-unioned University Estate boundary |
 | `/api/summary/habitat` | Habitat summary JSON |
+
+The Annual Habitat Trends **Average Biomscore** option reads annual means from
+the habitat summary. It locks the metric to Biomscore, uses a 0-3 chart scale,
+and replaces the area table with annual average Biomscore values.
 
 The DataFrame is loaded once and cached in memory for the lifetime of the API process. Deploying newly committed data causes Render to restart and rebuild this cache.
 

@@ -54,6 +54,8 @@ Habitat_Polygons University all years.gpkg
 10m square habitats.gpkg
 ```
 
+Prepare the 10-metre-square file by intersecting each year's habitat polygons with the University 10-metre grid in QGIS, then visually check the result before uploading it. The complete preparation and quality-control procedure is in [`maintenance-handbook.md`](maintenance-handbook.md#preparing-habitat-summary-data).
+
 Hotspots normally run after successful observation or habitat workflows. They
 can also be run manually and do not need a Google Drive file ID.
 
@@ -364,4 +366,3 @@ valid for `service_account.Credentials.from_service_account_file`.
   <https://docs.github.com/en/rest/repos/repos#create-a-repository-dispatch-event>
 - GitHub Actions secrets:
   <https://docs.github.com/en/actions/concepts/security/secrets>
-

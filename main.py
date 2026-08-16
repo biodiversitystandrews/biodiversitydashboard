@@ -23,6 +23,8 @@ from pathlib import Path
 from math import ceil, floor
 from threading import Lock
 from scipy.stats import entropy
+from shapely import contains_xy
+from shapely.geometry import shape
 from dashboard_standardisation import standardise_date_series
 
 app = FastAPI(title="Biodiversity Dashboard", version="1.0.0")
@@ -102,6 +104,7 @@ POLYGON_ANALYSIS_COLUMNS = [
     "taxa",
     "latitude",
     "longitude",
+    "year",
 ]
 
 MAP_AGGREGATION_THRESHOLD = 10_000
@@ -316,6 +319,52 @@ def apply_filters(
         except (ValueError, IndexError):
             pass
     return query_df
+
+
+def calculate_diversity_metrics(query_df: pd.DataFrame) -> dict:
+    """Calculate the KPI values shared by the dashboard and removal analysis."""
+    if query_df.empty:
+        return {
+            "shannon": 0.0,
+            "simpson": 0.0,
+            "species_richness": 0,
+            "total_records": 0,
+        }
+
+    use_count_column = (
+        "count" in query_df.columns
+        and query_df["count"].notna().sum() > (len(query_df) / 2)
+    )
+    if use_count_column:
+        species_counts = query_df.groupby("species", observed=True)["count"].sum()
+    else:
+        species_counts = query_df.groupby("species", observed=True).size()
+
+    species_counts = species_counts[species_counts > 0]
+    species_richness = len(species_counts)
+    shannon_index = 0.0
+    gini_simpson_index = 0.0
+    if species_richness > 1 and species_counts.sum() > 0:
+        proportions = species_counts / species_counts.sum()
+        shannon_index = entropy(proportions, base=np.e)
+        gini_simpson_index = 1 - (proportions**2).sum()
+
+    return {
+        "shannon": round(float(shannon_index), 3),
+        "simpson": round(float(gini_simpson_index), 3),
+        "species_richness": int(species_richness),
+        "total_records": int(len(query_df)),
+    }
+
+
+def metric_change(before: float, after: float) -> dict:
+    """Describe the absolute and percentage change after polygon records are removed."""
+    change = float(after) - float(before)
+    percent = (change / float(before) * 100) if before else None
+    return {
+        "absolute": round(change, 3),
+        "percent": round(percent, 2) if percent is not None else None,
+    }
 
 def _get_options(df_source: pd.DataFrame, key_name: str):
     """Return sorted non-null values used to populate one frontend filter."""
@@ -576,31 +625,65 @@ def get_diversity_summary(
     """Calculate diversity indices and record totals for the filtered records."""
     df = get_dataframe()
     query_df = apply_filters(df, english_name, species, obs, taxa, year, month, bbox)
+    return calculate_diversity_metrics(query_df)
 
-    if query_df.empty:
-        return {"shannon": 0, "simpson": 0, "species_richness": 0, "total_records": 0}
 
-    use_count_column = "count" in query_df.columns and query_df["count"].notna().sum() > (len(query_df) / 2)
+@app.post("/api/polygon-removal-summary")
+def get_polygon_removal_summary(payload: dict):
+    """Report dashboard KPIs before and after removing records inside a polygon.
 
-    if use_count_column:
-        species_counts = query_df.groupby("species", observed=True)["count"].sum()
-    else:
-        species_counts = query_df.groupby("species", observed=True).size()
+    The optional sampling year limits both the baseline and polygon selection,
+    allowing like-for-like annual removal scenarios. Calculations reuse the
+    dashboard KPI function so values cannot drift between pages.
+    """
+    geometry_data = payload.get("geometry")
+    sampling_year = payload.get("year") or None
+    if not isinstance(geometry_data, dict):
+        raise HTTPException(status_code=422, detail="A GeoJSON polygon is required.")
 
-    species_richness = len(species_counts)
-    shannon_index = 0
-    gini_simpson_index = 0
+    try:
+        polygon = shape(geometry_data)
+    except (TypeError, ValueError) as error:
+        raise HTTPException(status_code=422, detail="The polygon geometry is invalid.") from error
+    if polygon.is_empty or polygon.geom_type not in {"Polygon", "MultiPolygon"}:
+        raise HTTPException(status_code=422, detail="A non-empty polygon geometry is required.")
+    if not polygon.is_valid:
+        polygon = polygon.buffer(0)
+    if polygon.is_empty or not polygon.is_valid:
+        raise HTTPException(status_code=422, detail="The polygon geometry could not be repaired.")
 
-    if not species_counts.empty and species_counts.sum() > 0 and species_richness > 1:
-        proportions = species_counts[species_counts > 0] / species_counts.sum()
-        shannon_index = entropy(proportions, base=np.e)
-        gini_simpson_index = 1 - (proportions**2).sum()
+    baseline_df = apply_filters(get_dataframe(), year=sampling_year).copy()
+    coordinates = baseline_df.dropna(subset=["longitude", "latitude"])
+    inside_mask = pd.Series(False, index=baseline_df.index)
+    if not coordinates.empty:
+        inside_mask.loc[coordinates.index] = contains_xy(
+            polygon,
+            pd.to_numeric(coordinates["longitude"], errors="coerce"),
+            pd.to_numeric(coordinates["latitude"], errors="coerce"),
+        )
 
+    removed_df = baseline_df.loc[inside_mask]
+    remaining_df = baseline_df.loc[~inside_mask]
+    baseline = calculate_diversity_metrics(baseline_df)
+    removed = calculate_diversity_metrics(removed_df)
+    remaining = calculate_diversity_metrics(remaining_df)
+
+    removed_species = set(removed_df["species"].dropna())
+    remaining_species = set(remaining_df["species"].dropna())
+    species_lost = sorted(removed_species - remaining_species)
+    changes = {
+        key: metric_change(baseline[key], remaining[key])
+        for key in ("total_records", "species_richness", "shannon", "simpson")
+    }
     return {
-        "shannon": round(float(shannon_index), 3),
-        "simpson": round(float(gini_simpson_index), 3),
-        "species_richness": int(species_richness),
-        "total_records": len(query_df)
+        "year": sampling_year or "All records",
+        "baseline": baseline,
+        "inside_polygon": removed,
+        "remaining": remaining,
+        "change": changes,
+        "species_recorded_inside": len(removed_species),
+        "species_lost_from_dataset": len(species_lost),
+        "species_lost_names": species_lost,
     }
 
 @app.get("/api/summary/annual_trends")

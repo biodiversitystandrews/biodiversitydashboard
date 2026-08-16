@@ -64,6 +64,31 @@ Habitat area is always calculated after projecting polygons to British National 
 
 If habitat-summary processing needs to be repeated, open **Actions > Update Habitat Summary JSON from Google Drive > Run workflow** and enter the ZIP file's Google Drive file ID. The normal Google Drive upload trigger continues to work automatically.
 
+## Preparing Habitat Summary Data
+
+The habitat-summary workflow expects a ZIP archive containing these exact files:
+
+```text
+Habitat_Polygons University all years.gpkg
+10m square habitats.gpkg
+```
+
+The `10m square habitats.gpkg` file is prepared manually in QGIS. For every sampling year, intersect the University's 10-metre square grid with that year's habitat polygons. The intersection should produce separate polygon features for each habitat occurring within each grid square. These features allow the summary processor to count how many distinct 10-metre squares contain each habitat; the all-years habitat file alone cannot provide those square counts.
+
+Manual GIS preparation and visual review are intentional parts of the method. Student-drawn habitat polygons may contain geometry mistakes that are easier to identify on a map than to repair safely in code. Before creating and uploading the ZIP, check in QGIS that:
+
+1. Both required files are present and use the exact filenames above.
+2. Every expected sampling year is present in both files.
+3. The sampling-year and habitat-category fields contain the expected values.
+4. Geometry is valid and there are no unintended empty or zero-area polygons.
+5. The `broad` habitat category is populated where possible; missing values are displayed as `Unknown` by the dashboard.
+6. Biomscore values are either numeric scores from 0 to 3 or labels beginning with one of those scores.
+7. The 10-metre intersection contains records for every year that should show non-zero **No. 10m Squares** and **Squares (%)** values.
+
+The automated processor then calculates habitat area and area percentage, average Biomscore, the number of occupied 10-metre squares, and the percentage of occupied squares for each habitat and year. It validates the prepared input and should stop with a clear error when required annual data, usable geometry, or valid area is missing instead of publishing misleading zero values.
+
+Automated validation is a final safety check, not a replacement for viewing the source and intersection layers in QGIS. Defensive geometry handling may prevent a processing crash, but it must not be treated as confirmation that an ecological boundary is correct. Correct source mapping errors in QGIS, recreate the intersection, and rerun the workflow.
+
 ## API Data Loading
 
 `main.py` loads every `data/*.parquet` file in alphabetical order and records the source filename. It validates required columns, preserves any source ID as `source_record_id`, then assigns one globally unique dashboard `id`. The combined DataFrame and large polygon payload are cached until the API process restarts.
