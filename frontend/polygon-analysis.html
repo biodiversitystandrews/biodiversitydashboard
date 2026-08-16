@@ -279,7 +279,7 @@
 
         .layout {
             display: grid;
-            grid-template-columns: minmax(520px, 1fr) minmax(460px, 500px);
+            grid-template-columns: minmax(0, 1fr);
             gap: 1.25em;
             width: 100%;
         }
@@ -290,8 +290,7 @@
 
         .side-panel {
             align-self: start;
-            position: sticky;
-            top: 1em;
+            position: static;
             min-width: 0;
         }
 
@@ -306,6 +305,9 @@
             border: 1px solid var(--border-color);
             border-radius: 6px;
             background: #fff;
+        }
+        .comparison-results > .polygon-result-card:only-child {
+            grid-column: 1 / -1;
         }
         .polygon-result-card h3 { margin: 0 0 0.6em; }
         .polygon-result-card .metric-row {
@@ -327,6 +329,12 @@
             white-space: normal;
             overflow-wrap: anywhere;
             text-align: center;
+        }
+        .polygon-result-card .note {
+            margin-bottom: 0.2em;
+        }
+        .polygon-result-card .comparison-download {
+            grid-column: 1 / -1;
         }
         .removal-summary { margin-top: 0.7em; }
         .comparison-change-summary {
@@ -613,12 +621,6 @@
         .hidden { display: none; }
         .error { color: var(--error-color); font-weight: 700; }
 
-        @media (max-width: 1120px) {
-            .layout { grid-template-columns: 1fr; }
-            .side-panel { position: static; }
-            #map-container { height: 560px; }
-        }
-
         @media (max-width: 680px) {
             body { padding: 0.75em; }
             #map-container { height: 480px; }
@@ -694,7 +696,7 @@
                         class="map-layer-info"
                         aria-label="Explain the Biodiversity Index grid"
                         aria-expanded="false"
-                        data-tooltip="Compares unique species per observation record between estate grid cells. Red cells rank lower, amber cells are intermediate, green cells rank higher, and grey cells do not have enough observations for classification."
+                        data-tooltip="Compares unique species per observation record between estate grid cells. Red cells rank lower, amber cells are intermediate, green cells rank higher, and grey cells do not have enough observations for classification. The grid uses 50% opacity so it can be viewed consistently together with observation effort."
                     >i</button>
                 </span>
                 <span class="map-layer-option">
@@ -707,7 +709,7 @@
                         class="map-layer-info"
                         aria-label="Explain the observation effort grid"
                         aria-expanded="false"
-                        data-tooltip="Shows where observation records are concentrated. Red cells have lower survey effort, amber cells are intermediate, and green cells have higher effort. Low effort does not necessarily mean low biodiversity."
+                        data-tooltip="Shows where observation records are concentrated. Red cells have lower survey effort, amber cells are intermediate, and green cells have higher effort. Low effort does not necessarily mean low biodiversity. The grid uses 50% opacity and a fixed layer order so its combined display with the Biodiversity Index grid does not depend on which checkbox was selected first."
                     >i</button>
                 </span>
             </div>
@@ -767,7 +769,6 @@
             </div>
 
             <div id="results-content" class="hidden">
-                <button type="button" id="back-to-comparison" class="secondary mode-dependent">Back to Side-by-Side Comparison</button>
                 <div class="metric-grid" id="metric-grid"></div>
                 <div class="note" id="concern-note"></div>
                 <div class="result-actions">
@@ -822,7 +823,7 @@ $(document).ready(function() {
     const MIN_SURVEY_DAYS_FOR_CONCERN = 2;
     // Keep analysis grids translucent so observation markers and the underlying
     // map remain readable when users compare biodiversity with survey coverage.
-    const HOTSPOT_GRID_FILL_OPACITY = 0.38;
+    const HOTSPOT_GRID_FILL_OPACITY = 0.5;
     const HOTSPOT_GRID_BORDER_OPACITY = 0.65;
 
     let map;
@@ -1117,7 +1118,6 @@ $(document).ready(function() {
         $('#show-species-table').on('click', showSpeciesTable);
         $('#show-records-table').on('click', showRecordsTable);
         $('#download-comparison-results').on('click', downloadComparisonResults);
-        $('#back-to-comparison').on('click', renderAllPolygonResults);
         $('#close-result-table').on('click', closeResultTable);
         $('#result-table-modal').on('click', event => {
             if (event.target.id === 'result-table-modal') closeResultTable();
@@ -1186,8 +1186,12 @@ $(document).ready(function() {
 
         map.createPane('habitatPane');
         map.getPane('habitatPane').style.zIndex = 390;
-        map.createPane('hotspotPane');
-        map.getPane('hotspotPane').style.zIndex = 395;
+        // Separate panes keep the blend order stable. Toggling the grids in a
+        // different sequence must not change the combined map colours.
+        map.createPane('biodiversityHotspotPane');
+        map.getPane('biodiversityHotspotPane').style.zIndex = 394;
+        map.createPane('effortHotspotPane');
+        map.getPane('effortHotspotPane').style.zIndex = 395;
         map.createPane('recordPane');
         map.getPane('recordPane').style.zIndex = 400;
         map.createPane('previewPane');
@@ -1438,7 +1442,9 @@ $(document).ready(function() {
                     bbox: turf.bbox(feature)
                 }));
                 hotspotLayers[metric] = L.geoJSON(data, {
-                    pane: 'hotspotPane',
+                    pane: metric === 'biodiversity'
+                        ? 'biodiversityHotspotPane'
+                        : 'effortHotspotPane',
                     style: feature => getHotspotStyle(feature, metric),
                     onEachFeature: (feature, layer) => {
                         layer.bindPopup(buildHotspotPopup(feature));
@@ -2163,23 +2169,78 @@ $(document).ready(function() {
         </details>`;
     }
 
-    function buildCompactResult(summary, index) {
-        const indexValue = summary.biodiversityIndex == null ? 'N/A' : summary.biodiversityIndex.toFixed(3);
-        const speciesLost = summary.removal
-            ? summary.removal.species_lost_from_dataset.toLocaleString()
-            : 'N/A';
+    // Build the complete metric set once so single-area and side-by-side views
+    // always show identical values, rankings, explanations and removal KPIs.
+    function buildFullResultMetrics(summary) {
+        const biodiversityIndex = summary.biodiversityIndex == null
+            ? 'N/A'
+            : summary.biodiversityIndex.toFixed(3);
+        const indexRank = formatRank(summary.randomComparison.indexPercentile);
+        const recordsRank = formatRank(summary.randomComparison.recordsPercentile);
+        const speciesRank = formatRank(summary.randomComparison.speciesPercentile);
+        const taxaRank = formatRank(summary.randomComparison.taxaPercentile);
+        const surveyDaysRank = formatRank(summary.randomComparison.surveyDaysPercentile);
+        const observersRank = formatRank(summary.randomComparison.observersPercentile);
+        const rankSummary = summary.randomComparison.samples > 0
+            ? formatRankSummary(summary.randomComparison.indexPercentile)
+            : 'No comparison generated';
+        const biodiversityHotspot = formatOverlap(summary.hotspotOverlap?.biodiversity);
+        const effortHotspot = formatOverlap(summary.hotspotOverlap?.effort);
+        const requestedSamples = getRandomPolygonCount();
+        const sampleDisplay = summary.randomComparison.samples === requestedSamples
+            ? summary.randomComparison.samples.toLocaleString()
+            : `${summary.randomComparison.samples.toLocaleString()} of ${requestedSamples.toLocaleString()}`;
+        const strataRepresented = Object.keys(summary.randomComparison.strataCounts || {}).length;
+        const biodiversitySamples = Number(summary.randomComparison.biodiversitySamples) || 0;
+        const concernScore = Number.isFinite(summary.concern.score)
+            ? `${Math.round(summary.concern.score)} / 100`
+            : 'Not available';
+
+        const html = `
+            <div class="metric-row">${metricLabel('Relative biodiversity value', 'A colour-coded interpretation of the relative biodiversity ranking. Red means lower, amber means moderate and green means higher compared with sufficiently surveyed random areas of the same shape and size.')}<b><span class="concern-label ${summary.concern.className}">${summary.concern.label}</span></b></div>
+            <div class="metric-row">${metricLabel('Relative biodiversity ranking', 'This averages the Biodiversity Index percentile and unique-species percentile. For example, 59 / 100 means the combined result was higher than about 59% of sufficiently surveyed random comparison areas. It is not an absolute biodiversity percentage.')}<b>${concernScore}</b></div>
+            <div class="metric-row">${metricLabel('Biodiversity Index', 'Unique species divided by observation records inside the drawn polygon. It helps account for different amounts of recording effort, although survey design and data quality can still affect the result.')}<b>${biodiversityIndex}</b></div>
+            <div class="metric-row">${metricLabel('Observation records', 'The number of individual observation records whose exact recorded coordinates fall inside the drawn polygon.')}<b>${summary.totalRecords.toLocaleString()}</b></div>
+            <div class="metric-row">${metricLabel('Unique species', 'The number of distinct scientific species names recorded inside the drawn polygon.')}<b>${summary.uniqueSpecies.toLocaleString()}</b></div>
+            <div class="metric-row">${metricLabel('Taxa groups', 'The number of distinct broad taxonomic groups represented, such as birds, mammals or angiosperms.')}<b>${summary.taxaGroups.toLocaleString()}</b></div>
+            <div class="metric-row">${metricLabel('Survey days', 'The number of distinct calendar dates on which observations were recorded inside the polygon.')}<b>${summary.surveyDays.toLocaleString()}</b></div>
+            <div class="metric-row">${metricLabel('Observers', 'The number of distinct named observers represented by records inside the polygon.')}<b>${summary.observers.toLocaleString()}</b></div>
+            <details class="rank-details">
+                <summary><span>Comparison rankings</span><span class="rank-summary">${rankSummary}</span></summary>
+                <div class="rank-content">
+                    <p class="rank-help">${summary.randomComparison.samples > 0
+                        ? `Effort rankings compare this polygon with ${sampleDisplay} randomly positioned and rotated polygons of the same shape and size. Biodiversity rankings use the ${biodiversitySamples.toLocaleString()} comparison areas containing at least ${MIN_RECORDS_FOR_CONCERN} records across ${MIN_SURVEY_DAYS_FOR_CONCERN} survey days. “Higher than 42%” means 42% of those comparison areas had a lower result. All ${summary.randomComparison.samples.toLocaleString()} accepted comparison polygons are drawn on the map and included in the calculations.`
+                        : 'No valid same-size random comparison polygons were generated. The selected-area statistics remain valid, but relative rankings cannot be shown. Try 100 comparisons or draw a smaller area.'}</p>
+                    <div class="metric-row">${metricLabel('Biodiversity Index rank', 'Where the focal polygon’s Biodiversity Index falls relative to sufficiently surveyed comparison polygons.')}<b>${indexRank}</b></div>
+                    <div class="metric-row">${metricLabel('Observation effort rank', 'Where the number of records in the focal polygon falls relative to all accepted comparison polygons.')}<b>${recordsRank}</b></div>
+                    <div class="metric-row">${metricLabel('Unique-species rank', 'Where species richness in the focal polygon falls relative to sufficiently surveyed comparison polygons.')}<b>${speciesRank}</b></div>
+                    <div class="metric-row">${metricLabel('Taxa-groups rank', 'Where the number of taxa groups falls relative to sufficiently surveyed comparison polygons.')}<b>${taxaRank}</b></div>
+                    <div class="metric-row">${metricLabel('Survey-days rank', 'Where the number of survey dates falls relative to all accepted comparison polygons.')}<b>${surveyDaysRank}</b></div>
+                    <div class="metric-row">${metricLabel('Observer rank', 'Where the number of distinct observers falls relative to all accepted comparison polygons.')}<b>${observersRank}</b></div>
+                    <div class="comparison-method"><b>Comparison method:</b> ${escapeHtml(summary.randomComparison.method || 'N/A')}<br><b>Habitat strata represented:</b> ${strataRepresented || 'N/A'}</div>
+                </div>
+            </details>
+            <div class="metric-row">${metricLabel('High biodiversity-hotspot overlap', 'The percentage of the drawn polygon’s area that overlaps grid cells classified as high for the Biodiversity Index. This is an area percentage, not a percentage of records.')}<b>${biodiversityHotspot.high}</b></div>
+            <div class="metric-row">${metricLabel('Moderate hotspot overlap', 'The percentage of the drawn polygon’s area that overlaps grid cells classified as moderate for the Biodiversity Index.')}<b>${biodiversityHotspot.moderate}</b></div>
+            <div class="metric-row">${metricLabel('High survey-effort overlap', 'The percentage of the drawn polygon’s area that overlaps grid cells classified as having high observation effort.')}<b>${effortHotspot.high}</b></div>
+            <div class="metric-row">${metricLabel('Random comparisons analysed', 'The number of accepted same-shape, same-size random polygons used in the comparison rankings.')}<b>${sampleDisplay}</b></div>
+            ${buildRemovalSummary(summary)}
+        `;
+
+        return { html, requestedSamples, sampleDisplay };
+    }
+
+    // Render one complete result card in the two-polygon comparison view.
+    function buildFullComparisonResult(summary, index) {
+        const display = buildFullResultMetrics(summary);
         return `<section class="polygon-result-card" data-result-index="${index}">
             <h3>Polygon ${index + 1} <small>(${escapeHtml(summary.year)})</small></h3>
-            <div class="metric-row"><span>Relative biodiversity</span><b><span class="concern-label ${summary.concern.className}">${summary.concern.label}</span></b></div>
-            <div class="metric-row"><span>Biodiversity Index</span><b>${indexValue}</b></div>
-            <div class="metric-row"><span>Observation records</span><b>${summary.totalRecords.toLocaleString()}</b></div>
-            <div class="metric-row"><span>Unique species</span><b>${summary.uniqueSpecies.toLocaleString()}</b></div>
-            <div class="metric-row"><span>Taxa groups</span><b>${summary.taxaGroups.toLocaleString()}</b></div>
-            <div class="metric-row"><span>Survey days</span><b>${summary.surveyDays.toLocaleString()}</b></div>
-            <div class="metric-row"><span>Observers</span><b>${summary.observers.toLocaleString()}</b></div>
-            <div class="metric-row">${metricLabel('Species lost in removal scenario', 'Species that would no longer occur anywhere in the selected dashboard dataset after records inside this polygon are excluded. Open the full results for every before-and-after KPI.')}<b>${speciesLost}</b></div>
+            <div class="metric-grid">${display.html}</div>
+            <div class="note">${escapeHtml(summary.concern.note)}</div>
             <div class="result-actions">
-                <button type="button" class="select-result" data-index="${index}">Open Full Results</button>
+                <button type="button" class="comparison-species" data-index="${index}">View Polygon Species List</button>
+                <button type="button" class="comparison-records secondary" data-index="${index}">View Polygon Records</button>
+                <button type="button" class="comparison-download secondary" data-index="${index}" ${summary.randomComparison.results?.length ? '' : 'disabled'}>Download Comparison CSV</button>
             </div>
         </section>`;
     }
@@ -2189,22 +2250,34 @@ $(document).ready(function() {
         if (isComparisonMode()) {
             $('#results-empty, #results-loading, #results-error, #results-content').addClass('hidden');
             const cards = polygonEntries
-                .map((entry, index) => entry.summary ? buildCompactResult(entry.summary, index) : '')
+                .map((entry, index) => entry.summary ? buildFullComparisonResult(entry.summary, index) : '')
                 .join('');
             const difference = polygonEntries.length === 2 && polygonEntries.every(entry => entry.summary)
                 ? buildPolygonDifferenceSummary(polygonEntries[0].summary, polygonEntries[1].summary)
                 : '';
             $('#comparison-results').html(cards + difference).removeClass('hidden');
-            $('.select-result').off('click').on('click', function() {
-                selectedResultIndex = Number($(this).data('index'));
-                activePolygonSummary = polygonEntries[selectedResultIndex].summary;
-                $('#comparison-results').addClass('hidden');
-                renderSummary(activePolygonSummary);
+            $('.comparison-species').off('click').on('click', function() {
+                selectComparisonResult($(this).data('index'));
+                showSpeciesTable();
+            });
+            $('.comparison-records').off('click').on('click', function() {
+                selectComparisonResult($(this).data('index'));
+                showRecordsTable();
+            });
+            $('.comparison-download').off('click').on('click', function() {
+                selectComparisonResult($(this).data('index'));
+                downloadComparisonResults();
             });
             return;
         }
         $('#comparison-results').addClass('hidden').empty();
         if (completed[0]) renderSummary(completed[0].summary);
+    }
+
+    // Set the active result before opening a table or downloading its CSV.
+    function selectComparisonResult(index) {
+        selectedResultIndex = Number(index);
+        activePolygonSummary = polygonEntries[selectedResultIndex]?.summary || null;
     }
 
     function renderSummary(summary) {

@@ -190,8 +190,10 @@ an independent observation-year filter. **Compare Same Area by Year** creates
 Polygon 2 in exactly the same location for a like-for-like comparison between
 years. **Copy Shape to Another Area** creates Polygon 2 with the same shape and
 size and lets the user drag it to a different comparison location; its analysis
-runs after the shape is released. Once both results are available, the page
-reports Polygon 2 minus Polygon 1 for the
+runs after the shape is released. The map uses the full page width and both
+complete polygon analyses are then displayed side by side below it, including
+rankings, hotspot overlap, removal KPIs, record/species tables and CSV exports.
+Once both results are available, the page reports Polygon 2 minus Polygon 1 for the
 Biodiversity Index, records, unique species, taxa groups, survey days, and
 observers. Positive values mean Polygon 2 is higher and negative values mean it
 is lower; these observational differences are not by themselves evidence of a
@@ -256,6 +258,10 @@ as annual evidence.
 Grey requires at least five records across at least two distinct survey days. High requires a combined Biodiversity Index and species-richness score of at least 75, with both component percentiles at least 60. Moderate begins at a combined score of 40. These project thresholds must be reviewed with ecological specialists before being used in formal decision-making.
 
 The observation-effort grid uses the same traffic-light direction: red for lower effort, amber for moderate effort and green for higher effort. Lower effort identifies a need for more recording; it is not evidence of lower biodiversity.
+
+The Biodiversity Index and observation-effort grids each use 50% fill opacity
+and separate fixed map panes. Consequently, displaying both grids produces the
+same blended view regardless of which checkbox is selected first.
 
 ## API
 
