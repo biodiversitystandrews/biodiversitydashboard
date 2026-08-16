@@ -277,9 +277,11 @@ The API is implemented in `main.py`. Important endpoints include:
 | `/api/estate-boundary` | Pre-unioned University Estate boundary |
 | `/api/summary/habitat` | Habitat summary JSON |
 
-The Annual Habitat Trends **Average Biomscore** option reads annual means from
-the habitat summary. It locks the metric to Biomscore, uses a 0-3 chart scale,
-and replaces the area table with annual average Biomscore values.
+The Annual Habitat Trends view defaults to **Total** in the Habitat dropdown and
+**Biomscore** in the Metric dropdown. It reads annual means from the habitat
+summary, uses a 0-3 chart scale, and replaces the area table with annual average
+Biomscore values. Users can select an individual habitat or switch the Metric
+dropdown to either area measure.
 
 The DataFrame is loaded once and cached in memory for the lifetime of the API process. Deploying newly committed data causes Render to restart and rebuild this cache.
 

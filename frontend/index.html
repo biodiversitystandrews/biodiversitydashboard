@@ -374,9 +374,9 @@
             <div class="control-group">
                 <label for="habitat-trend-metric-select">Metric:</label>
                 <select id="habitat-trend-metric-select">
-                    <option value="areaha" selected>Area (ha)</option>
+                    <option value="areaha">Area (ha)</option>
                     <option value="percent_area">Area (%)</option>
-                    <option value="biomscore">Biomscore</option>
+                    <option value="biomscore" selected>Biomscore</option>
                 </select>
             </div>
             <div class="control-group">
@@ -1651,14 +1651,15 @@ $(document).ready(function() {
         habitatSelect.empty();
 
         habitatSelect.append(new Option('Total', 'Total'));
-        habitatSelect.append(new Option('Average Biomscore', '__average_biomscore__'));
 
         habitatSummaryData.habitats.forEach(habitat => {
             habitatSelect.append(new Option(habitat.name, habitat.name));
         });
 
+        // Start with the estate-wide average Biomscore. Users can then select
+        // an individual habitat or switch the metric to either area measure.
         habitatSelect.val('Total');
-        $('#habitat-trend-metric-select').val('areaha');
+        $('#habitat-trend-metric-select').val('biomscore');
 
         drawHabitatTrendChart();
     }
@@ -1672,31 +1673,26 @@ $(document).ready(function() {
         }
 
         const selectedHabitat = $('#habitat-trend-habitat-select').val();
-        const isAverageBiomscore = selectedHabitat === '__average_biomscore__';
         const metricSelect = $('#habitat-trend-metric-select');
         const standardizedButton = $('#habitat-trend-standardized-btn');
 
-        if (isAverageBiomscore) {
-            metricSelect.val('biomscore').prop('disabled', true);
+        const selectedMetric = metricSelect.val();
+        // Biomscore is already a 0-3 average, so a standardized-growth view
+        // would obscure its meaning. Area metrics retain both display modes.
+        if (selectedMetric === 'biomscore') {
             standardizedButton.prop('disabled', true).removeClass('active');
             $('#habitat-trend-absolute-btn').addClass('active');
         } else {
-            metricSelect.prop('disabled', false);
             standardizedButton.prop('disabled', false);
         }
 
-        const selectedMetric = metricSelect.val();
-        const selectedMetricText = isAverageBiomscore
-            ? 'Average Biomscore'
-            : metricSelect.find('option:selected').text();
-        const selectedHabitatText = isAverageBiomscore
-            ? 'All habitats'
-            : $('#habitat-trend-habitat-select option:selected').text();
+        const selectedMetricText = metricSelect.find('option:selected').text();
+        const selectedHabitatText = $('#habitat-trend-habitat-select option:selected').text();
         const mode = standardizedButton.hasClass('active') ? 'standardized' : 'absolute';
         const years = habitatSummaryData.years;
 
         let sourceData;
-        if (selectedHabitat === 'Total' || isAverageBiomscore) {
+        if (selectedHabitat === 'Total') {
             sourceData = habitatSummaryData.totals;
         } else {
             sourceData = habitatSummaryData.habitats.find(h => h.name === selectedHabitat)?.metrics;
