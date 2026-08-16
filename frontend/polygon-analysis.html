@@ -30,6 +30,12 @@
             --danger-color: #c92a2a;
         }
 
+        /* Keep padding and borders inside declared widths. This prevents the
+           embedded page from developing a horizontal scrollbar. */
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             margin: 0;
@@ -71,6 +77,11 @@
 
         .button-link.secondary, button.secondary {
             background-color: var(--secondary-color);
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.55;
         }
 
         .intro-card, .card {
@@ -234,6 +245,14 @@
             box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
         }
 
+        .move-polygon-tooltip {
+            border: 1px solid #5b21b6;
+            background: rgba(255, 255, 255, 0.96);
+            color: #4c1d95;
+            font-weight: 700;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+        }
+
         .observation-cluster {
             display: flex;
             align-items: center;
@@ -260,14 +279,20 @@
 
         .layout {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 360px;
+            grid-template-columns: minmax(520px, 1fr) minmax(460px, 500px);
             gap: 1.25em;
+            width: 100%;
+        }
+
+        .layout > * {
+            min-width: 0;
         }
 
         .side-panel {
             align-self: start;
             position: sticky;
             top: 1em;
+            min-width: 0;
         }
 
         .comparison-results {
@@ -283,7 +308,26 @@
             background: #fff;
         }
         .polygon-result-card h3 { margin: 0 0 0.6em; }
-        .polygon-result-card .metric-row { padding: 0.45em 0; }
+        .polygon-result-card .metric-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: start;
+            gap: 0.5em;
+            padding: 0.45em 0;
+        }
+        .polygon-result-card .metric-row > span:first-child {
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+        .polygon-result-card .metric-row b {
+            min-width: 0;
+            max-width: 100%;
+        }
+        .polygon-result-card .concern-label {
+            white-space: normal;
+            overflow-wrap: anywhere;
+            text-align: center;
+        }
         .removal-summary { margin-top: 0.7em; }
         .comparison-change-summary {
             grid-column: 1 / -1;
@@ -569,10 +613,15 @@
         .hidden { display: none; }
         .error { color: var(--error-color); font-weight: 700; }
 
-        @media (max-width: 1000px) {
+        @media (max-width: 1120px) {
             .layout { grid-template-columns: 1fr; }
             .side-panel { position: static; }
             #map-container { height: 560px; }
+        }
+
+        @media (max-width: 680px) {
+            body { padding: 0.75em; }
+            #map-container { height: 480px; }
             .comparison-results { grid-template-columns: 1fr; }
         }
     </style>
@@ -584,7 +633,7 @@
     </div>
 
     <div class="intro-card">
-        <p><b>How to use this page:</b> draw a polygon on the map to calculate biodiversity summaries for that area.</p>
+        <p><b>How to use this page:</b> draw a polygon on the map to calculate biodiversity summaries for that area. In comparison mode, draw both areas yourself, reuse the same mapped area to compare years, or copy Polygon 1 and drag the matching shape to another location.</p>
         <p>The tool compares the drawn polygon with habitat-stratified random polygons of the same shape and size across the mapped University Estate. This helps show whether the selected area ranks high or low for biodiversity value and survey effort compared with similar-sized areas.</p>
         <p><b>Biodiversity Index:</b> unique species divided by total observation records. This helps adjust for variable survey effort.</p>
     </div>
@@ -664,7 +713,20 @@
             </div>
         </div>
         <button type="button" id="clear-polygons" class="secondary">Clear Polygons</button>
-        <button type="button" id="copy-polygon" class="secondary mode-dependent">Reuse Polygon 1 Shape</button>
+        <button
+            type="button"
+            id="reuse-same-area"
+            class="secondary mode-dependent"
+            title="Use Polygon 1 in exactly the same location, normally to compare two record years"
+            disabled
+        >Compare Same Area by Year</button>
+        <button
+            type="button"
+            id="copy-polygon"
+            class="secondary mode-dependent"
+            title="Create Polygon 2 with the same shape and size, then drag it to another location"
+            disabled
+        >Copy Shape to Another Area</button>
         <div class="hotspot-keys" aria-live="polite">
             <div id="biodiversity-hotspot-key" class="hotspot-key">
                 <span class="hotspot-key-title">Biodiversity Index:</span>
@@ -828,19 +890,135 @@ $(document).ready(function() {
         }
     }
 
-    function copyFirstPolygonForComparison() {
+    // Copy actions only make sense in comparison mode after Polygon 1 exists.
+    function updatePolygonCopyButtons() {
+        const canCopy = isComparisonMode() && Boolean(polygonEntries[0]);
+        $('#reuse-same-area, #copy-polygon').prop('disabled', !canCopy);
+    }
+
+    // Remove an existing Polygon 2 before creating a replacement from Polygon 1.
+    function removeSecondComparisonPolygon() {
+        if (!polygonEntries[1]) return;
+        drawnItems.removeLayer(polygonEntries[1].layer);
+        polygonEntries.splice(1, 1);
+    }
+
+    // Copy Polygon 1 into Polygon 2 without changing its location. This is
+    // intended for comparing the same area under two different year filters.
+    function reuseFirstPolygonInSameArea() {
         if (!isComparisonMode() || !polygonEntries[0]) return;
-        if (polygonEntries[1]) {
-            drawnItems.removeLayer(polygonEntries[1].layer);
-            polygonEntries.splice(1, 1);
-        }
-        const geometry = polygonEntries[0].polygon;
+        removeSecondComparisonPolygon();
+        const geometry = JSON.parse(JSON.stringify(polygonEntries[0].polygon));
         const layer = L.geoJSON(geometry, { pane: 'drawPane' }).getLayers()[0];
         drawnItems.addLayer(layer);
         const entry = { layer, polygon: geometry, year: getPolygonYear(1), summary: null };
         polygonEntries.push(entry);
         prepareFocalPolygonLayer(layer, 1);
         calculateAndShowPolygonSummary(entry, 1);
+    }
+
+    // Recursively clone Leaflet's nested polygon coordinate arrays so moving a
+    // copied shape cannot mutate Polygon 1's coordinates.
+    function cloneLeafletLatLngs(latLngs) {
+        if (Array.isArray(latLngs)) return latLngs.map(cloneLeafletLatLngs);
+        return L.latLng(latLngs.lat, latLngs.lng);
+    }
+
+    // Shift every coordinate in a nested Leaflet polygon by the drag offset.
+    function translateLeafletLatLngs(latLngs, latitudeOffset, longitudeOffset) {
+        if (Array.isArray(latLngs)) {
+            return latLngs.map(value =>
+                translateLeafletLatLngs(value, latitudeOffset, longitudeOffset)
+            );
+        }
+        return L.latLng(
+            latLngs.lat + latitudeOffset,
+            latLngs.lng + longitudeOffset
+        );
+    }
+
+    // Make a copied Polygon 2 draggable as a complete shape. Analysis begins
+    // after it is released, and runs again if the user later moves it elsewhere.
+    function enableCopiedPolygonDragging(entry) {
+        const layer = entry.layer;
+        layer.bindTooltip('Drag Polygon 2 to the comparison area', {
+            permanent: true,
+            direction: 'center',
+            className: 'move-polygon-tooltip'
+        });
+
+        layer.on('mousedown', event => {
+            if (event.originalEvent && event.originalEvent.button !== 0) return;
+            if (event.originalEvent) {
+                L.DomEvent.preventDefault(event.originalEvent);
+                L.DomEvent.stopPropagation(event.originalEvent);
+            }
+
+            cancelPolygonWorkerAnalysis();
+            randomPolygonPreviewLayer.clearLayers();
+            const start = event.latlng;
+            const originalLatLngs = cloneLeafletLatLngs(layer.getLatLngs());
+            let moved = false;
+
+            layer.closeTooltip();
+            layer.setStyle({ dashArray: '8 6', fillOpacity: 0.32 });
+            map.dragging.disable();
+            $('#preview-status')
+                .text('Moving Polygon 2. Release it over the area to compare.')
+                .removeClass('hidden');
+
+            const handleMove = moveEvent => {
+                moved = true;
+                layer.setLatLngs(translateLeafletLatLngs(
+                    originalLatLngs,
+                    moveEvent.latlng.lat - start.lat,
+                    moveEvent.latlng.lng - start.lng
+                ));
+                layer.redraw();
+            };
+
+            const finishMove = () => {
+                map.off('mousemove', handleMove);
+                L.DomEvent.off(document, 'mouseup', finishMove);
+                map.dragging.enable();
+                layer.setStyle({ dashArray: null, fillOpacity: 0.25 });
+
+                if (!moved) {
+                    layer.openTooltip();
+                    $('#preview-status')
+                        .text('Drag the purple Polygon 2 to a different area, then release it to analyse.')
+                        .removeClass('hidden');
+                    return;
+                }
+
+                layer.unbindTooltip();
+                entry.polygon = leafletLayerToTurfPolygon(layer);
+                entry.year = getPolygonYear(1);
+                entry.summary = null;
+                calculateAndShowPolygonSummary(entry, 1);
+            };
+
+            map.on('mousemove', handleMove);
+            L.DomEvent.on(document, 'mouseup', finishMove);
+        });
+    }
+
+    // Create Polygon 2 with Polygon 1's shape and size, then let the user drag
+    // the copy to the actual comparison location before calculations begin.
+    function copyFirstPolygonForComparison() {
+        if (!isComparisonMode() || !polygonEntries[0]) return;
+        removeSecondComparisonPolygon();
+        const geometry = JSON.parse(JSON.stringify(polygonEntries[0].polygon));
+        const layer = L.geoJSON(geometry, { pane: 'drawPane' }).getLayers()[0];
+        drawnItems.addLayer(layer);
+        const entry = { layer, polygon: geometry, year: getPolygonYear(1), summary: null };
+        polygonEntries.push(entry);
+        prepareFocalPolygonLayer(layer, 1);
+        enableCopiedPolygonDragging(entry);
+        layer.openTooltip();
+        $('#preview-status')
+            .text('Polygon 2 is the purple copy. Drag it to the second area and release to analyse.')
+            .removeClass('hidden');
     }
 
     function loadRemovalSummary(polygon, year) {
@@ -900,6 +1078,7 @@ $(document).ready(function() {
             clearPolygons();
         });
         $('#polygon-1-year, #polygon-2-year').on('change', rerunPolygonAnalyses);
+        $('#reuse-same-area').on('click', reuseFirstPolygonInSameArea);
         $('#copy-polygon').on('click', copyFirstPolygonForComparison);
         $('#habitat-year-filter').on('change', () => {
             clearPolygons();
@@ -1067,6 +1246,7 @@ $(document).ready(function() {
                 summary: null
             };
             polygonEntries.push(entry);
+            updatePolygonCopyButtons();
             prepareFocalPolygonLayer(layer, index);
             calculateAndShowPolygonSummary(entry, index);
         });
@@ -2679,6 +2859,7 @@ $(document).ready(function() {
         activePolygonSummary = null;
         polygonEntries = [];
         selectedResultIndex = 0;
+        updatePolygonCopyButtons();
         $('#comparison-results').addClass('hidden').empty();
         closeResultTable();
         if (resetDisplay) setEmptyState();

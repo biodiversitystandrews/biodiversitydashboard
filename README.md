@@ -186,9 +186,12 @@ The user draws a focal polygon and the tool calculates:
 
 Single-area mode preserves the original workflow. Two-area mode accepts two
 sequential polygons and presents their summaries side by side. Each polygon has
-an independent observation-year filter; **Reuse Polygon 1 Shape** creates an
-identical second geometry for a like-for-like comparison between years. Once
-both results are available, the page reports Polygon 2 minus Polygon 1 for the
+an independent observation-year filter. **Compare Same Area by Year** creates
+Polygon 2 in exactly the same location for a like-for-like comparison between
+years. **Copy Shape to Another Area** creates Polygon 2 with the same shape and
+size and lets the user drag it to a different comparison location; its analysis
+runs after the shape is released. Once both results are available, the page
+reports Polygon 2 minus Polygon 1 for the
 Biodiversity Index, records, unique species, taxa groups, survey days, and
 observers. Positive values mean Polygon 2 is higher and negative values mean it
 is lower; these observational differences are not by themselves evidence of a
