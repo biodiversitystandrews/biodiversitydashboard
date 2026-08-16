@@ -410,7 +410,8 @@
         .removal-kpi-table td:first-child { text-align: left; }
         .removal-kpi-table tbody tr:last-child td { border-bottom: 0; }
         .mode-dependent { display: none; }
-        body.is-comparison-mode .mode-dependent { display: flex; }
+        body.is-comparison-mode .control-group.mode-dependent { display: block; }
+        body.is-comparison-mode button.mode-dependent { display: inline-flex; }
 
         .metric-grid {
             display: grid;
@@ -681,12 +682,12 @@
             </select>
         </div>
         <div class="control-group">
-            <label for="polygon-1-year">Polygon 1 Records</label>
-            <select id="polygon-1-year"><option value="">All records</option></select>
+            <label for="polygon-1-year">Polygon 1 Data Year</label>
+            <select id="polygon-1-year" title="Choose which observation year is included in Polygon 1"><option value="">All years</option></select>
         </div>
         <div class="control-group mode-dependent">
-            <label for="polygon-2-year">Polygon 2 Records</label>
-            <select id="polygon-2-year"><option value="">All records</option></select>
+            <label for="polygon-2-year">Polygon 2 Data Year</label>
+            <select id="polygon-2-year" title="Choose which observation year is included in Polygon 2"><option value="">All years</option></select>
         </div>
         <div class="control-group">
             <label for="habitat-year-filter">Habitat Year</label>
@@ -862,6 +863,7 @@ $(document).ready(function() {
     const HOTSPOT_GRID_BORDER_OPACITY = 0.65;
 
     let map;
+    let mapResizeObserver;
     let drawnItems;
     let randomPolygonPreviewLayer;
     let randomPolygonCanvasRenderer;
@@ -911,7 +913,7 @@ $(document).ready(function() {
     function populateObservationYearFilters() {
         const years = [...new Set(currentMapData.map(point => point.year).filter(Boolean))].sort().reverse();
         ['#polygon-1-year', '#polygon-2-year'].forEach(selector => {
-            const select = $(selector).empty().append(new Option('All records', ''));
+            const select = $(selector).empty().append(new Option('All years', ''));
             years.forEach(year => select.append(new Option(year, year)));
         });
     }
@@ -1292,6 +1294,32 @@ $(document).ready(function() {
         });
 
         map.on(L.Draw.Event.DELETED, clearPolygons);
+
+        initializeMapResizeHandling();
+    }
+
+    // Leaflet measures its container only during initialization. WordPress
+    // embeds and responsive layout changes can alter that width afterwards,
+    // leaving blank tiles unless the map is explicitly told to recalculate.
+    function initializeMapResizeHandling() {
+        const mapContainer = document.getElementById('map-container');
+        let resizeFrame = null;
+
+        const redrawMap = () => {
+            window.cancelAnimationFrame(resizeFrame);
+            resizeFrame = window.requestAnimationFrame(() => {
+                if (map) map.invalidateSize({ pan: false, animate: false });
+            });
+        };
+
+        if ('ResizeObserver' in window) {
+            mapResizeObserver = new ResizeObserver(redrawMap);
+            mapResizeObserver.observe(mapContainer);
+        }
+
+        window.addEventListener('resize', redrawMap);
+        // Embedded pages can settle over several frames after scripts execute.
+        [0, 150, 500, 1200].forEach(delay => window.setTimeout(redrawMap, delay));
     }
 
     function loadHabitatLayer() {
@@ -1731,7 +1759,7 @@ $(document).ready(function() {
             summary.hotspotOverlap = year ? null : await calculateHotspotOverlap(polygon);
             if (analysisId !== analysisSequence) return;
             summary.concern = classifyBiodiversityConcern(summary);
-            summary.year = year || 'All records';
+            summary.year = year || 'All years';
             summary.removal = await removalPromise;
 
             entry.summary = summary;
