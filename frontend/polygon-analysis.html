@@ -205,6 +205,17 @@
             font-size: 0.9em;
         }
 
+        .control-label-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 0.3em;
+        }
+
+        .control-label-row label {
+            margin-bottom: 0;
+        }
+
         .hotspot-key.is-visible { display: inline-flex; }
         .hotspot-key-title { font-weight: 700; margin-right: 2px; }
         .hotspot-key-item { display: inline-flex; align-items: center; gap: 4px; }
@@ -682,15 +693,24 @@
             </select>
         </div>
         <div class="control-group">
-            <label for="polygon-1-year">Polygon 1 Data Year</label>
+            <div class="control-label-row">
+                <label for="polygon-1-year">Polygon 1 Data Year</label>
+                <button type="button" class="map-layer-info metric-info" aria-label="Explain Polygon 1 Data Year" aria-expanded="false" data-tooltip="Select the observation year used to calculate Polygon 1. Choose All years to include every available observation record.">i</button>
+            </div>
             <select id="polygon-1-year" title="Choose which observation year is included in Polygon 1"><option value="">All years</option></select>
         </div>
         <div class="control-group mode-dependent">
-            <label for="polygon-2-year">Polygon 2 Data Year</label>
+            <div class="control-label-row">
+                <label for="polygon-2-year">Polygon 2 Data Year</label>
+                <button type="button" class="map-layer-info metric-info" aria-label="Explain Polygon 2 Data Year" aria-expanded="false" data-tooltip="Select the observation year used to calculate Polygon 2. To compare change in the same mapped area, select a different specific year from Polygon 1 before clicking Compare Same Area by Year.">i</button>
+            </div>
             <select id="polygon-2-year" title="Choose which observation year is included in Polygon 2"><option value="">All years</option></select>
         </div>
         <div class="control-group">
-            <label for="habitat-year-filter">Habitat Year</label>
+            <div class="control-label-row">
+                <label for="habitat-year-filter">Habitat Year</label>
+                <button type="button" class="map-layer-info metric-info" aria-label="Explain Habitat Year" aria-expanded="false" data-tooltip="Selects the annual habitat map shown on the page and used to distribute habitat-stratified random comparison polygons. It does not filter biodiversity observation records; use Polygon 1 Data Year and Polygon 2 Data Year for that.">i</button>
+            </div>
             <select id="habitat-year-filter"></select>
         </div>
         <div class="control-group">
@@ -892,6 +912,8 @@ $(document).ready(function() {
     let polygonEntries = [];
     let selectedResultIndex = 0;
     let resultsReadyNoticeTimer = null;
+    let polygonAnalysisRunning = false;
+    let comparisonActionLocked = false;
 
     function gridCoordinate(value) {
         return Math.floor(value / GRID_SIZE);
@@ -918,21 +940,46 @@ $(document).ready(function() {
         });
     }
 
-    async function rerunPolygonAnalyses() {
-        if (!polygonEntries.length) return;
+    // Recalculate only the polygon controlled by the changed year selector.
+    // In particular, selecting Polygon 2's year does no work until it exists.
+    async function rerunPolygonAnalysis(index) {
+        const entry = polygonEntries[index];
+        if (!entry) return;
         cancelPolygonWorkerAnalysis();
         randomPolygonPreviewLayer.clearLayers();
-        for (let index = 0; index < polygonEntries.length; index += 1) {
-            const entry = polygonEntries[index];
-            entry.year = getPolygonYear(index);
-            await calculateAndShowPolygonSummary(entry, index);
-        }
+        entry.year = getPolygonYear(index);
+        await calculateAndShowPolygonSummary(entry, index);
     }
 
     // Copy actions only make sense in comparison mode after Polygon 1 exists.
     function updatePolygonCopyButtons() {
-        const canCopy = isComparisonMode() && Boolean(polygonEntries[0]);
+        const canCopy = isComparisonMode() &&
+            Boolean(polygonEntries[0]) &&
+            !polygonAnalysisRunning &&
+            !comparisonActionLocked;
         $('#reuse-same-area, #copy-polygon').prop('disabled', !canCopy);
+    }
+
+    // The same-area action is meaningful only for two different explicit
+    // years. Confirm them before starting the expensive second analysis.
+    function confirmSameAreaYearComparison() {
+        const firstYear = $('#polygon-1-year').val();
+        const secondYear = $('#polygon-2-year').val();
+
+        if (!firstYear || !secondYear) {
+            alert('Select a specific data year for both Polygon 1 and Polygon 2 before comparing the same area.');
+            (!firstYear ? $('#polygon-1-year') : $('#polygon-2-year')).trigger('focus');
+            return false;
+        }
+        if (firstYear === secondYear) {
+            alert('Select two different data years to compare change in the same area.');
+            $('#polygon-2-year').trigger('focus');
+            return false;
+        }
+
+        return window.confirm(
+            `Compare the same mapped area using Polygon 1: ${firstYear} and Polygon 2: ${secondYear}?`
+        );
     }
 
     // Remove an existing Polygon 2 before creating a replacement from Polygon 1.
@@ -944,8 +991,12 @@ $(document).ready(function() {
 
     // Copy Polygon 1 into Polygon 2 without changing its location. This is
     // intended for comparing the same area under two different year filters.
-    function reuseFirstPolygonInSameArea() {
-        if (!isComparisonMode() || !polygonEntries[0]) return;
+    async function reuseFirstPolygonInSameArea() {
+        if (!isComparisonMode() || !polygonEntries[0] || comparisonActionLocked || polygonAnalysisRunning) return;
+        if (!confirmSameAreaYearComparison()) return;
+        comparisonActionLocked = true;
+        updatePolygonCopyButtons();
+        cancelPolygonWorkerAnalysis();
         removeSecondComparisonPolygon();
         const geometry = JSON.parse(JSON.stringify(polygonEntries[0].polygon));
         const layer = L.geoJSON(geometry, { pane: 'drawPane' }).getLayers()[0];
@@ -953,7 +1004,12 @@ $(document).ready(function() {
         const entry = { layer, polygon: geometry, year: getPolygonYear(1), summary: null };
         polygonEntries.push(entry);
         prepareFocalPolygonLayer(layer, 1);
-        calculateAndShowPolygonSummary(entry, 1);
+        try {
+            await calculateAndShowPolygonSummary(entry, 1);
+        } finally {
+            comparisonActionLocked = false;
+            updatePolygonCopyButtons();
+        }
     }
 
     // Recursively clone Leaflet's nested polygon coordinate arrays so moving a
@@ -1034,6 +1090,8 @@ $(document).ready(function() {
                 entry.polygon = leafletLayerToTurfPolygon(layer);
                 entry.year = getPolygonYear(1);
                 entry.summary = null;
+                comparisonActionLocked = false;
+                updatePolygonCopyButtons();
                 calculateAndShowPolygonSummary(entry, 1);
             };
 
@@ -1045,7 +1103,9 @@ $(document).ready(function() {
     // Create Polygon 2 with Polygon 1's shape and size, then let the user drag
     // the copy to the actual comparison location before calculations begin.
     function copyFirstPolygonForComparison() {
-        if (!isComparisonMode() || !polygonEntries[0]) return;
+        if (!isComparisonMode() || !polygonEntries[0] || comparisonActionLocked || polygonAnalysisRunning) return;
+        comparisonActionLocked = true;
+        updatePolygonCopyButtons();
         removeSecondComparisonPolygon();
         const geometry = JSON.parse(JSON.stringify(polygonEntries[0].polygon));
         const layer = L.geoJSON(geometry, { pane: 'drawPane' }).getLayers()[0];
@@ -1116,7 +1176,8 @@ $(document).ready(function() {
             document.body.classList.toggle('is-comparison-mode', isComparisonMode());
             clearPolygons();
         });
-        $('#polygon-1-year, #polygon-2-year').on('change', rerunPolygonAnalyses);
+        $('#polygon-1-year').on('change', () => rerunPolygonAnalysis(0));
+        $('#polygon-2-year').on('change', () => rerunPolygonAnalysis(1));
         $('#reuse-same-area').on('click', reuseFirstPolygonInSameArea);
         $('#copy-polygon').on('click', copyFirstPolygonForComparison);
         $('#habitat-year-filter').on('change', () => {
@@ -1731,6 +1792,8 @@ $(document).ready(function() {
 
     async function calculateAndShowPolygonSummary(entry, entryIndex) {
         const analysisId = ++analysisSequence;
+        polygonAnalysisRunning = true;
+        updatePolygonCopyButtons();
         const layer = entry.layer;
         const polygon = entry.polygon;
         const year = entry.year || null;
@@ -1772,6 +1835,13 @@ $(document).ready(function() {
             if (analysisId !== analysisSequence) return;
             console.error(error);
             setErrorState("Could not calculate the polygon summary. Try drawing a smaller or simpler polygon.");
+        } finally {
+            // A cancelled older calculation must not unlock controls belonging
+            // to the newer calculation that replaced it.
+            if (analysisId === analysisSequence) {
+                polygonAnalysisRunning = false;
+                updatePolygonCopyButtons();
+            }
         }
     }
 
@@ -3010,6 +3080,8 @@ $(document).ready(function() {
     function clearPolygons(resetDisplay = true) {
         hideResultsReadyNotice();
         cancelPolygonWorkerAnalysis();
+        polygonAnalysisRunning = false;
+        comparisonActionLocked = false;
         drawnItems.clearLayers();
         randomPolygonPreviewLayer.clearLayers();
         $('#preview-status').addClass('hidden').text('');
