@@ -190,7 +190,10 @@ an independent observation-year filter. **Compare Same Area by Year** creates
 Polygon 2 in exactly the same location for a like-for-like comparison between
 years. **Copy Shape to Another Area** creates Polygon 2 with the same shape and
 size and lets the user drag it to a different comparison location; its analysis
-runs after the shape is released. The map uses the full page width and both
+runs after the shape is released. Changing either Data Year selector does not
+start analysis automatically. **Apply Updated Years to Existing Polygons**
+recalculates both results while retaining their current shapes and locations.
+The map uses the full page width and both
 complete polygon analyses are then displayed side by side below it, including
 rankings, hotspot overlap, removal KPIs, record/species tables and CSV exports.
 Once both results are available, the page reports Polygon 2 minus Polygon 1 for the

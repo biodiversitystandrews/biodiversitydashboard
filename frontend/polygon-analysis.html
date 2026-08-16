@@ -695,14 +695,14 @@
         <div class="control-group">
             <div class="control-label-row">
                 <label for="polygon-1-year">Polygon 1 Data Year</label>
-                <button type="button" class="map-layer-info metric-info" aria-label="Explain Polygon 1 Data Year" aria-expanded="false" data-tooltip="Select the observation year used to calculate Polygon 1. Choose All years to include every available observation record.">i</button>
+                <button type="button" class="map-layer-info metric-info" aria-label="Explain Polygon 1 Data Year" aria-expanded="false" data-tooltip="Select the observation year used to calculate Polygon 1. Choose All years to include every available observation record. If polygons already exist, use Apply Updated Years to Existing Polygons to recalculate without moving them.">i</button>
             </div>
             <select id="polygon-1-year" title="Choose which observation year is included in Polygon 1"><option value="">All years</option></select>
         </div>
         <div class="control-group mode-dependent">
             <div class="control-label-row">
                 <label for="polygon-2-year">Polygon 2 Data Year</label>
-                <button type="button" class="map-layer-info metric-info" aria-label="Explain Polygon 2 Data Year" aria-expanded="false" data-tooltip="Select the observation year used to calculate Polygon 2. To compare change in the same mapped area, select a different specific year from Polygon 1 before clicking Compare Same Area by Year.">i</button>
+                <button type="button" class="map-layer-info metric-info" aria-label="Explain Polygon 2 Data Year" aria-expanded="false" data-tooltip="Select the observation year used to calculate Polygon 2. To compare change in the same mapped area, select a different specific year from Polygon 1 before clicking Compare Same Area by Year. If two polygons already exist, use Apply Updated Years to Existing Polygons to retain both locations.">i</button>
             </div>
             <select id="polygon-2-year" title="Choose which observation year is included in Polygon 2"><option value="">All years</option></select>
         </div>
@@ -782,6 +782,13 @@
             title="Create Polygon 2 with the same shape and size, then drag it to another location"
             disabled
         >Copy Shape to Another Area</button>
+        <button
+            type="button"
+            id="apply-comparison-years"
+            class="secondary mode-dependent"
+            title="Keep both polygons where they are and recalculate them using the selected data years"
+            disabled
+        >Apply Updated Years to Existing Polygons</button>
         <div class="hotspot-keys" aria-live="polite">
             <div id="biodiversity-hotspot-key" class="hotspot-key">
                 <span class="hotspot-key-title">Biodiversity Index:</span>
@@ -887,6 +894,7 @@ $(document).ready(function() {
     let drawnItems;
     let randomPolygonPreviewLayer;
     let randomPolygonCanvasRenderer;
+    let randomPreviewRenderSequence = 0;
     let recordMarkerLayer;
     let habitatLayer;
     let habitatGeoJson = null;
@@ -940,15 +948,29 @@ $(document).ready(function() {
         });
     }
 
-    // Recalculate only the polygon controlled by the changed year selector.
-    // In particular, selecting Polygon 2's year does no work until it exists.
-    async function rerunPolygonAnalysis(index) {
-        const entry = polygonEntries[index];
-        if (!entry) return;
-        cancelPolygonWorkerAnalysis();
-        randomPolygonPreviewLayer.clearLayers();
+    // Changing a year only configures the next explicit analysis. This avoids
+    // launching expensive random comparisons while a user explores options.
+    function handlePolygonYearSelectionChange() {
+        if (!polygonEntries.length) return;
+        $('#preview-status')
+            .text('Data year changed. No analysis has run yet; apply the updated years or use a comparison button.')
+            .removeClass('hidden');
+        updatePolygonCopyButtons();
+    }
+
+    function summaryUsesSelectedYear(entry, index) {
+        if (!entry?.summary) return false;
+        return entry.summary.year === (getPolygonYear(index) || 'All years');
+    }
+
+    // Refresh an existing polygon only when an explicit user action requires
+    // it and its displayed result does not match the selected data year.
+    async function ensurePolygonUsesSelectedYear(entry, index) {
+        if (summaryUsesSelectedYear(entry, index)) return true;
         entry.year = getPolygonYear(index);
+        entry.summary = null;
         await calculateAndShowPolygonSummary(entry, index);
+        return summaryUsesSelectedYear(entry, index);
     }
 
     // Copy actions only make sense in comparison mode after Polygon 1 exists.
@@ -958,6 +980,15 @@ $(document).ready(function() {
             !polygonAnalysisRunning &&
             !comparisonActionLocked;
         $('#reuse-same-area, #copy-polygon').prop('disabled', !canCopy);
+
+        const hasTwoPolygons = polygonEntries.length >= 2;
+        const yearsChanged = hasTwoPolygons && polygonEntries.some(
+            (entry, index) => !summaryUsesSelectedYear(entry, index)
+        );
+        $('#apply-comparison-years').prop(
+            'disabled',
+            !canCopy || !hasTwoPolygons || !yearsChanged
+        );
     }
 
     // The same-area action is meaningful only for two different explicit
@@ -982,6 +1013,46 @@ $(document).ready(function() {
         );
     }
 
+    // Reuse both existing geometries when only their observation-year filters
+    // change. This avoids forcing users to position Polygon 2 again.
+    async function applySelectedYearsToExistingPolygons() {
+        if (
+            !isComparisonMode() ||
+            polygonEntries.length < 2 ||
+            comparisonActionLocked ||
+            polygonAnalysisRunning
+        ) return;
+
+        const firstYear = getPolygonYear(0) || 'All years';
+        const secondYear = getPolygonYear(1) || 'All years';
+        const confirmed = window.confirm(
+            `Keep both polygon shapes in their current locations and recalculate using Polygon 1: ${firstYear} and Polygon 2: ${secondYear}?`
+        );
+        if (!confirmed) return;
+
+        comparisonActionLocked = true;
+        updatePolygonCopyButtons();
+        cancelPolygonWorkerAnalysis();
+        clearRandomPolygonPreviews();
+
+        // Clear both old summaries before rendering either new result so the
+        // page never presents a mixture of old-year and new-year statistics.
+        polygonEntries.forEach((entry, index) => {
+            entry.year = getPolygonYear(index);
+            entry.summary = null;
+        });
+
+        try {
+            for (let index = 0; index < polygonEntries.length; index += 1) {
+                await calculateAndShowPolygonSummary(polygonEntries[index], index);
+                if (!polygonEntries[index].summary) return;
+            }
+        } finally {
+            comparisonActionLocked = false;
+            updatePolygonCopyButtons();
+        }
+    }
+
     // Remove an existing Polygon 2 before creating a replacement from Polygon 1.
     function removeSecondComparisonPolygon() {
         if (!polygonEntries[1]) return;
@@ -998,6 +1069,14 @@ $(document).ready(function() {
         updatePolygonCopyButtons();
         cancelPolygonWorkerAnalysis();
         removeSecondComparisonPolygon();
+        clearRandomPolygonPreviews();
+
+        if (!await ensurePolygonUsesSelectedYear(polygonEntries[0], 0)) {
+            comparisonActionLocked = false;
+            updatePolygonCopyButtons();
+            return;
+        }
+
         const geometry = JSON.parse(JSON.stringify(polygonEntries[0].polygon));
         const layer = L.geoJSON(geometry, { pane: 'drawPane' }).getLayers()[0];
         drawnItems.addLayer(layer);
@@ -1050,7 +1129,7 @@ $(document).ready(function() {
             }
 
             cancelPolygonWorkerAnalysis();
-            randomPolygonPreviewLayer.clearLayers();
+            clearRandomPolygonPreviews();
             const start = event.latlng;
             const originalLatLngs = cloneLeafletLatLngs(layer.getLatLngs());
             let moved = false;
@@ -1102,11 +1181,20 @@ $(document).ready(function() {
 
     // Create Polygon 2 with Polygon 1's shape and size, then let the user drag
     // the copy to the actual comparison location before calculations begin.
-    function copyFirstPolygonForComparison() {
+    async function copyFirstPolygonForComparison() {
         if (!isComparisonMode() || !polygonEntries[0] || comparisonActionLocked || polygonAnalysisRunning) return;
         comparisonActionLocked = true;
         updatePolygonCopyButtons();
+        cancelPolygonWorkerAnalysis();
         removeSecondComparisonPolygon();
+        clearRandomPolygonPreviews();
+
+        if (!await ensurePolygonUsesSelectedYear(polygonEntries[0], 0)) {
+            comparisonActionLocked = false;
+            updatePolygonCopyButtons();
+            return;
+        }
+
         const geometry = JSON.parse(JSON.stringify(polygonEntries[0].polygon));
         const layer = L.geoJSON(geometry, { pane: 'drawPane' }).getLayers()[0];
         drawnItems.addLayer(layer);
@@ -1176,10 +1264,10 @@ $(document).ready(function() {
             document.body.classList.toggle('is-comparison-mode', isComparisonMode());
             clearPolygons();
         });
-        $('#polygon-1-year').on('change', () => rerunPolygonAnalysis(0));
-        $('#polygon-2-year').on('change', () => rerunPolygonAnalysis(1));
+        $('#polygon-1-year, #polygon-2-year').on('change', handlePolygonYearSelectionChange);
         $('#reuse-same-area').on('click', reuseFirstPolygonInSameArea);
         $('#copy-polygon').on('click', copyFirstPolygonForComparison);
+        $('#apply-comparison-years').on('click', applySelectedYearsToExistingPolygons);
         $('#habitat-year-filter').on('change', () => {
             clearPolygons();
             loadHabitatLayer();
@@ -1335,10 +1423,10 @@ $(document).ready(function() {
             });
         });
 
-        map.on(L.Draw.Event.CREATED, event => {
+        map.on(L.Draw.Event.CREATED, async event => {
             cancelPolygonWorkerAnalysis();
             if (!isComparisonMode() || polygonEntries.length >= 2) clearPolygons(false);
-            randomPolygonPreviewLayer.clearLayers();
+            clearRandomPolygonPreviews();
             const layer = event.layer;
             drawnItems.addLayer(layer);
             const index = polygonEntries.length;
@@ -1351,7 +1439,13 @@ $(document).ready(function() {
             polygonEntries.push(entry);
             updatePolygonCopyButtons();
             prepareFocalPolygonLayer(layer, index);
-            calculateAndShowPolygonSummary(entry, index);
+            // Drawing Polygon 2 is an explicit request to compare. Apply any
+            // pending Polygon 1 year selection before analysing Polygon 2.
+            if (isComparisonMode() && index === 1) {
+                const firstPolygonReady = await ensurePolygonUsesSelectedYear(polygonEntries[0], 0);
+                if (!firstPolygonReady) return;
+            }
+            await calculateAndShowPolygonSummary(entry, index);
         });
 
         map.on(L.Draw.Event.DELETED, clearPolygons);
@@ -1991,7 +2085,7 @@ $(document).ready(function() {
                 });
                 strataCounts[acceptedStratum] = (strataCounts[acceptedStratum] || 0) + 1;
                 currentStratumFailures = 0;
-                comparisonFeatures.push(movedPolygon);
+                comparisonFeatures.push(createRandomPreviewPolygon(movedPolygon));
             }
 
             updateProgress(randomStats.length, targetCount, `Analysed ${randomStats.length.toLocaleString()} of ${targetCount.toLocaleString()} random polygons...`);
@@ -2975,7 +3069,30 @@ $(document).ready(function() {
         return a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
     }
 
+    // Reduce only preview complexity. Exact moved polygons have already been
+    // used for point selection and all reported statistics before this runs.
+    function createRandomPreviewPolygon(polygon) {
+        try {
+            return turf.simplify(polygon, {
+                tolerance: 0.00002,
+                highQuality: false,
+                mutate: false
+            });
+        } catch (_error) {
+            return polygon;
+        }
+    }
+
+    function clearRandomPolygonPreviews() {
+        randomPreviewRenderSequence += 1;
+        if (randomPolygonPreviewLayer) randomPolygonPreviewLayer.clearLayers();
+        $('#preview-status').addClass('hidden').text('');
+    }
+
+    // Render every accepted outline, but add them in small batches so a large
+    // comparison cannot monopolise one browser frame or cause a memory spike.
     function drawRandomPolygons(features, analysedCount = 0) {
+        const renderSequence = ++randomPreviewRenderSequence;
         randomPolygonPreviewLayer.clearLayers();
         const status = $('#preview-status');
         if (!features.length) {
@@ -2983,27 +3100,41 @@ $(document).ready(function() {
             return;
         }
 
-        L.geoJSON(turf.featureCollection(features), {
-            pane: 'previewPane',
-            renderer: randomPolygonCanvasRenderer,
-            style: {
-                color: '#d00000',
-                fill: false,
-                weight: 1.5,
-                opacity: 0.48
-            },
-            interactive: false
-        }).addTo(randomPolygonPreviewLayer);
+        const batchSize = 40;
+        const acceptedCount = Math.max(features.length, Number(analysedCount) || 0);
+        let renderedCount = 0;
+        status.text(`Drawing 0 of ${acceptedCount.toLocaleString()} comparison polygons...`).removeClass('hidden');
 
-        const displayedCount = features.length;
-        const acceptedCount = Math.max(displayedCount, Number(analysedCount) || 0);
-        status
-            .text(
-                displayedCount === acceptedCount
-                    ? `Showing all ${displayedCount.toLocaleString()} accepted comparison polygons`
-                    : `Showing ${displayedCount.toLocaleString()} of ${acceptedCount.toLocaleString()} accepted comparison polygons`
-            )
-            .removeClass('hidden');
+        const renderNextBatch = () => {
+            if (renderSequence !== randomPreviewRenderSequence) return;
+            const batch = features.slice(renderedCount, renderedCount + batchSize);
+            L.geoJSON(turf.featureCollection(batch), {
+                pane: 'previewPane',
+                renderer: randomPolygonCanvasRenderer,
+                style: {
+                    color: '#d00000',
+                    fill: false,
+                    weight: 1.5,
+                    opacity: 0.48
+                },
+                interactive: false
+            }).addTo(randomPolygonPreviewLayer);
+
+            renderedCount += batch.length;
+            if (renderedCount < features.length) {
+                status.text(`Drawing ${renderedCount.toLocaleString()} of ${acceptedCount.toLocaleString()} comparison polygons...`);
+                window.requestAnimationFrame(renderNextBatch);
+                return;
+            }
+
+            status.text(
+                renderedCount === acceptedCount
+                    ? `Showing all ${renderedCount.toLocaleString()} accepted comparison polygons`
+                    : `Showing ${renderedCount.toLocaleString()} of ${acceptedCount.toLocaleString()} accepted comparison polygons`
+            );
+        };
+
+        window.requestAnimationFrame(renderNextBatch);
     }
 
     function prepareFocalPolygonLayer(layer, index = 0) {
@@ -3083,7 +3214,7 @@ $(document).ready(function() {
         polygonAnalysisRunning = false;
         comparisonActionLocked = false;
         drawnItems.clearLayers();
-        randomPolygonPreviewLayer.clearLayers();
+        clearRandomPolygonPreviews();
         $('#preview-status').addClass('hidden').text('');
         activePolygonSummary = null;
         polygonEntries = [];

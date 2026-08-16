@@ -7,6 +7,9 @@ const MAX_POINT_ATTEMPTS = 50;
 const MAX_STRATUM_FAILURES = 60;
 const MIN_BIODIVERSITY_RECORDS = 5;
 const MIN_BIODIVERSITY_SURVEY_DAYS = 2;
+// Exact polygons are used for statistics. Only the red browser preview is
+// simplified to avoid copying thousands of detailed coordinate arrays.
+const PREVIEW_SIMPLIFY_TOLERANCE = 0.00002;
 
 let pointGrid = new Map();
 let pointCount = 0;
@@ -210,7 +213,7 @@ async function analyseRandomPolygons(requestId, polygon, targetCount, seed, year
             });
             strataCounts[acceptedStratum] = (strataCounts[acceptedStratum] || 0) + 1;
             currentStratumFailures = 0;
-            comparisonFeatures.push(movedPolygon);
+            comparisonFeatures.push(createPreviewPolygon(movedPolygon));
         }
 
         self.postMessage({
@@ -224,6 +227,18 @@ async function analyseRandomPolygons(requestId, polygon, targetCount, seed, year
 
     if (requestId === activeRequestId) {
         postResult(requestId, focalPoints, focalStats, randomStats, comparisonFeatures, seed, strataCounts);
+    }
+}
+
+function createPreviewPolygon(polygon) {
+    try {
+        return turf.simplify(polygon, {
+            tolerance: PREVIEW_SIMPLIFY_TOLERANCE,
+            highQuality: false,
+            mutate: false
+        });
+    } catch (_error) {
+        return polygon;
     }
 }
 
