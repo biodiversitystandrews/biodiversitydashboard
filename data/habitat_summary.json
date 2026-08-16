@@ -31,8 +31,8 @@
           "areaha": 0.1077,
           "percent_area": 0.1,
           "biomscore": 1.0,
-          "no10msquares": 0,
-          "percent_squares": 0.0
+          "no10msquares": 77,
+          "percent_squares": 0.13
         }
       }
     },
@@ -55,10 +55,10 @@
         },
         "2025-26": {
           "areaha": 16.7974,
-          "percent_area": 14.87,
+          "percent_area": 14.86,
           "biomscore": 0.24,
-          "no10msquares": 0,
-          "percent_squares": 0.0
+          "no10msquares": 8784,
+          "percent_squares": 14.92
         }
       }
     },
@@ -83,8 +83,8 @@
           "areaha": 3.1665,
           "percent_area": 2.8,
           "biomscore": 1.61,
-          "no10msquares": 0,
-          "percent_squares": 0.0
+          "no10msquares": 1607,
+          "percent_squares": 2.73
         }
       }
     },
@@ -92,14 +92,14 @@
       "name": "garden",
       "metrics": {
         "2023-24": {
-          "areaha": 4.1877,
+          "areaha": 4.1878,
           "percent_area": 3.87,
           "biomscore": 1.0,
           "no10msquares": 3074,
           "percent_squares": 5.51
         },
         "2024-25": {
-          "areaha": 3.5114,
+          "areaha": 3.5115,
           "percent_area": 3.23,
           "biomscore": 1.0,
           "no10msquares": 2682,
@@ -109,8 +109,8 @@
           "areaha": 3.5446,
           "percent_area": 3.14,
           "biomscore": 1.14,
-          "no10msquares": 0,
-          "percent_squares": 0.0
+          "no10msquares": 2728,
+          "percent_squares": 4.63
         }
       }
     },
@@ -125,18 +125,18 @@
           "percent_squares": 3.53
         },
         "2024-25": {
-          "areaha": 2.0092,
+          "areaha": 2.009,
           "percent_area": 1.85,
           "biomscore": 1.14,
           "no10msquares": 2366,
           "percent_squares": 4.18
         },
         "2025-26": {
-          "areaha": 2.382,
+          "areaha": 2.3854,
           "percent_area": 2.11,
-          "biomscore": 1.25,
-          "no10msquares": 0,
-          "percent_squares": 0.0
+          "biomscore": 1.26,
+          "no10msquares": 2542,
+          "percent_squares": 4.32
         }
       }
     },
@@ -161,8 +161,8 @@
           "areaha": 4.5839,
           "percent_area": 4.06,
           "biomscore": 1.75,
-          "no10msquares": 0,
-          "percent_squares": 0.0
+          "no10msquares": 1718,
+          "percent_squares": 2.92
         }
       }
     },
@@ -184,11 +184,11 @@
           "percent_squares": 25.53
         },
         "2025-26": {
-          "areaha": 29.9286,
-          "percent_area": 26.49,
+          "areaha": 29.924,
+          "percent_area": 26.48,
           "biomscore": 0.78,
-          "no10msquares": 0,
-          "percent_squares": 0.0
+          "no10msquares": 14348,
+          "percent_squares": 24.37
         }
       }
     },
@@ -210,11 +210,11 @@
           "percent_squares": 6.33
         },
         "2025-26": {
-          "areaha": 9.1147,
+          "areaha": 9.1148,
           "percent_area": 8.07,
           "biomscore": 2.25,
-          "no10msquares": 0,
-          "percent_squares": 0.0
+          "no10msquares": 4558,
+          "percent_squares": 7.74
         }
       }
     },
@@ -222,25 +222,25 @@
       "name": "other developed land",
       "metrics": {
         "2023-24": {
-          "areaha": 14.7249,
+          "areaha": 14.7247,
           "percent_area": 13.59,
           "biomscore": 1.0,
           "no10msquares": 8056,
           "percent_squares": 14.44
         },
         "2024-25": {
-          "areaha": 14.8236,
+          "areaha": 14.8234,
           "percent_area": 13.65,
           "biomscore": 1.0,
           "no10msquares": 8099,
           "percent_squares": 14.3
         },
         "2025-26": {
-          "areaha": 16.1821,
+          "areaha": 16.1852,
           "percent_area": 14.32,
           "biomscore": 0.33,
-          "no10msquares": 0,
-          "percent_squares": 0.0
+          "no10msquares": 9156,
+          "percent_squares": 15.55
         }
       }
     },
@@ -265,8 +265,8 @@
           "areaha": 0.5279,
           "percent_area": 0.47,
           "biomscore": 1.0,
-          "no10msquares": 0,
-          "percent_squares": 0.0
+          "no10msquares": 285,
+          "percent_squares": 0.48
         }
       }
     },
@@ -288,11 +288,11 @@
           "percent_squares": 0.0
         },
         "2025-26": {
-          "areaha": 0.2706,
+          "areaha": 0.2714,
           "percent_area": 0.24,
           "biomscore": 2.67,
-          "no10msquares": 0,
-          "percent_squares": 0.0
+          "no10msquares": 160,
+          "percent_squares": 0.27
         }
       }
     },
@@ -314,11 +314,11 @@
           "percent_squares": 21.36
         },
         "2025-26": {
-          "areaha": 24.4718,
+          "areaha": 24.4719,
           "percent_area": 21.66,
           "biomscore": 1.59,
-          "no10msquares": 0,
-          "percent_squares": 0.0
+          "no10msquares": 12041,
+          "percent_squares": 20.45
         }
       }
     },
@@ -343,8 +343,8 @@
           "areaha": 1.9207,
           "percent_area": 1.7,
           "biomscore": 0.75,
-          "no10msquares": 0,
-          "percent_squares": 0.0
+          "no10msquares": 879,
+          "percent_squares": 1.49
         }
       }
     }
@@ -358,17 +358,17 @@
       "percent_squares": 100.0
     },
     "2024-25": {
-      "areaha": 108.5827,
+      "areaha": 108.5826,
       "percent_area": 100.0,
       "biomscore": 1.05,
       "no10msquares": 56642,
       "percent_squares": 100.0
     },
     "2025-26": {
-      "areaha": 112.9985,
+      "areaha": 113.0013,
       "percent_area": 100.0,
       "biomscore": 0.92,
-      "no10msquares": 0,
+      "no10msquares": 58883,
       "percent_squares": 100.0
     }
   }
