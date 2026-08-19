@@ -258,6 +258,36 @@
             box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
         }
 
+        .polygon-placement-confirmation {
+            position: absolute;
+            z-index: 1002;
+            right: 12px;
+            bottom: 12px;
+            width: min(470px, calc(100% - 24px));
+            padding: 10px 12px;
+            border: 1px solid #7c3aed;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.97);
+            color: #212529;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
+        }
+
+        .polygon-placement-confirmation p {
+            margin: 0;
+            line-height: 1.4;
+        }
+
+        .polygon-placement-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.6em;
+            margin-top: 0.7em;
+        }
+
+        .polygon-placement-actions button {
+            min-height: 40px;
+        }
+
         .map-analysis-progress {
             position: absolute;
             z-index: 1001;
@@ -887,6 +917,13 @@
                     <div class="progress-bar"><div id="map-progress-fill" class="progress-fill"></div></div>
                 </div>
                 <div id="preview-status" class="preview-status hidden" aria-live="polite"></div>
+                <div id="polygon-placement-confirmation" class="polygon-placement-confirmation hidden" role="status" aria-live="polite">
+                    <p><b>Check Polygon 2’s position.</b> You can zoom, pan, or drag it again before calculating.</p>
+                    <div class="polygon-placement-actions">
+                        <button type="button" id="undo-polygon-placement" class="secondary">Undo Move</button>
+                        <button type="button" id="confirm-polygon-placement">Use This Location</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1009,6 +1046,7 @@ $(document).ready(function() {
     let resultsReadyNoticeTimer = null;
     let polygonAnalysisRunning = false;
     let comparisonActionLocked = false;
+    let pendingCopiedPolygonPlacement = null;
     let dashboardDialogResolve = null;
     let dashboardDialogPreviousFocus = null;
 
@@ -1256,6 +1294,46 @@ $(document).ready(function() {
         );
     }
 
+    // Keep location confirmation on the map so users can inspect, zoom, pan,
+    // or reposition Polygon 2 before starting an expensive calculation.
+    function showPolygonPlacementConfirmation(entry, layer, previousLatLngs) {
+        pendingCopiedPolygonPlacement = { entry, layer, previousLatLngs };
+        $('#preview-status').addClass('hidden').text('');
+        $('#polygon-placement-confirmation').removeClass('hidden');
+    }
+
+    function hidePolygonPlacementConfirmation() {
+        pendingCopiedPolygonPlacement = null;
+        $('#polygon-placement-confirmation').addClass('hidden');
+    }
+
+    // Accept the currently visible location and only now begin analysis.
+    function confirmCopiedPolygonPlacement() {
+        if (!pendingCopiedPolygonPlacement) return;
+        const { entry, layer } = pendingCopiedPolygonPlacement;
+        hidePolygonPlacementConfirmation();
+        layer.unbindTooltip();
+        entry.polygon = leafletLayerToTurfPolygon(layer);
+        entry.year = getPolygonYear(1);
+        entry.summary = null;
+        comparisonActionLocked = false;
+        updatePolygonCopyButtons();
+        calculateAndShowPolygonSummary(entry, 1);
+    }
+
+    // Restore the position from immediately before the most recent drag.
+    function undoCopiedPolygonPlacement() {
+        if (!pendingCopiedPolygonPlacement) return;
+        const { layer, previousLatLngs } = pendingCopiedPolygonPlacement;
+        hidePolygonPlacementConfirmation();
+        layer.setLatLngs(previousLatLngs);
+        layer.redraw();
+        layer.openTooltip();
+        $('#preview-status')
+            .text('Polygon 2 returned to its previous position. Drag it again when ready.')
+            .removeClass('hidden');
+    }
+
     // Make a copied Polygon 2 draggable as a complete shape. Analysis begins
     // after it is released, and runs again if the user later moves it elsewhere.
     function enableCopiedPolygonDragging(entry) {
@@ -1287,6 +1365,7 @@ $(document).ready(function() {
                 .removeClass('hidden');
 
             const handleMove = moveEvent => {
+                if (!moved) hidePolygonPlacementConfirmation();
                 moved = true;
                 layer.setLatLngs(translateLeafletLatLngs(
                     originalLatLngs,
@@ -1296,7 +1375,7 @@ $(document).ready(function() {
                 layer.redraw();
             };
 
-            const finishMove = async () => {
+            const finishMove = () => {
                 map.off('mousemove', handleMove);
                 L.DomEvent.off(document, 'mouseup', finishMove);
                 map.dragging.enable();
@@ -1305,33 +1384,12 @@ $(document).ready(function() {
                 if (!moved) {
                     layer.openTooltip();
                     $('#preview-status')
-                        .text('Drag the purple Polygon 2 to a different area. Releasing it will ask you to confirm before analysis.')
+                        .text('Drag the purple Polygon 2 to a different area, then review its position using the map confirmation bar.')
                         .removeClass('hidden');
                     return;
                 }
-
-                const locationConfirmed = await showDashboardDialog({
-                    title: 'Confirm Polygon 2 location',
-                    message: 'Use this location for Polygon 2 and calculate its biodiversity results? Select Cancel to return it to its previous position and move it again.',
-                    confirmLabel: 'Use this location'
-                });
-                if (!locationConfirmed) {
-                    layer.setLatLngs(originalLatLngs);
-                    layer.redraw();
-                    layer.openTooltip();
-                    $('#preview-status')
-                        .text('Polygon 2 placement was not confirmed. It has returned to its previous position; drag it again when ready.')
-                        .removeClass('hidden');
-                    return;
-                }
-
-                layer.unbindTooltip();
-                entry.polygon = leafletLayerToTurfPolygon(layer);
-                entry.year = getPolygonYear(1);
-                entry.summary = null;
-                comparisonActionLocked = false;
-                updatePolygonCopyButtons();
-                calculateAndShowPolygonSummary(entry, 1);
+                layer.openTooltip();
+                showPolygonPlacementConfirmation(entry, layer, originalLatLngs);
             };
 
             map.on('mousemove', handleMove);
@@ -1428,6 +1486,8 @@ $(document).ready(function() {
         $('#reuse-same-area').on('click', reuseFirstPolygonInSameArea);
         $('#copy-polygon').on('click', copyFirstPolygonForComparison);
         $('#apply-comparison-years').on('click', applySelectedYearsToExistingPolygons);
+        $('#confirm-polygon-placement').on('click', confirmCopiedPolygonPlacement);
+        $('#undo-polygon-placement').on('click', undoCopiedPolygonPlacement);
         $('#habitat-year-filter').on('change', () => {
             clearPolygons();
             loadHabitatLayer();
@@ -3439,6 +3499,7 @@ $(document).ready(function() {
         cancelPolygonWorkerAnalysis();
         polygonAnalysisRunning = false;
         comparisonActionLocked = false;
+        hidePolygonPlacementConfirmation();
         drawnItems.clearLayers();
         clearRandomPolygonPreviews();
         $('#preview-status').addClass('hidden').text('');
