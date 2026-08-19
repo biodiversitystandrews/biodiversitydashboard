@@ -403,6 +403,10 @@
             grid-column: 1 / -1;
         }
         .removal-summary { margin-top: 0.7em; }
+        .removal-species-action {
+            width: 100%;
+            margin-top: 0.75em;
+        }
         .comparison-change-summary {
             grid-column: 1 / -1;
             margin-top: 0.1em;
@@ -666,6 +670,47 @@
 
         body.result-modal-open { overflow: hidden; }
 
+        .dashboard-dialog {
+            position: fixed;
+            inset: 0;
+            z-index: 2100;
+            display: grid;
+            place-items: center;
+            padding: 1em;
+            background: rgba(20, 25, 30, 0.68);
+        }
+
+        .dashboard-dialog.hidden { display: none; }
+
+        .dashboard-dialog-content {
+            width: min(460px, 100%);
+            max-height: min(80vh, 520px);
+            overflow-y: auto;
+            padding: 1.25em;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.3);
+        }
+
+        .dashboard-dialog-content h2 {
+            margin: 0 0 0.65em;
+            font-size: 1.25em;
+        }
+
+        .dashboard-dialog-message {
+            margin: 0;
+            color: #333;
+            line-height: 1.5;
+            white-space: pre-line;
+        }
+
+        .dashboard-dialog-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.65em;
+            margin-top: 1.2em;
+        }
+
         table {
             border-collapse: collapse;
             width: 100%;
@@ -904,6 +949,17 @@
         </div>
     </div>
 
+    <div id="dashboard-dialog" class="dashboard-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="dashboard-dialog-title" aria-describedby="dashboard-dialog-message">
+        <div class="dashboard-dialog-content">
+            <h2 id="dashboard-dialog-title">Confirm action</h2>
+            <p id="dashboard-dialog-message" class="dashboard-dialog-message"></p>
+            <div class="dashboard-dialog-actions">
+                <button type="button" id="dashboard-dialog-cancel" class="secondary">Cancel</button>
+                <button type="button" id="dashboard-dialog-confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
 <script>
 $(document).ready(function() {
     // Use the local URL while testing. Change this back to the Render URL before public deployment.
@@ -953,6 +1009,8 @@ $(document).ready(function() {
     let resultsReadyNoticeTimer = null;
     let polygonAnalysisRunning = false;
     let comparisonActionLocked = false;
+    let dashboardDialogResolve = null;
+    let dashboardDialogPreviousFocus = null;
 
     function gridCoordinate(value) {
         return Math.floor(value / GRID_SIZE);
@@ -969,6 +1027,48 @@ $(document).ready(function() {
 
     function getPolygonYear(index) {
         return $(`#polygon-${index + 1}-year`).val() || null;
+    }
+
+    // Show an in-page dialog instead of window.alert/window.confirm. Native
+    // browser dialogs add "embedded page says" when this tool runs in WordPress.
+    function showDashboardDialog({
+        title = 'Confirm action',
+        message,
+        confirmLabel = 'Confirm',
+        cancelLabel = 'Cancel',
+        showCancel = true
+    }) {
+        if (dashboardDialogResolve) closeDashboardDialog(false);
+
+        dashboardDialogPreviousFocus = document.activeElement;
+        $('#dashboard-dialog-title').text(title);
+        $('#dashboard-dialog-message').text(message);
+        $('#dashboard-dialog-confirm').text(confirmLabel);
+        $('#dashboard-dialog-cancel').text(cancelLabel).toggleClass('hidden', !showCancel);
+        $('#dashboard-dialog').removeClass('hidden');
+        $('body').addClass('result-modal-open');
+
+        return new Promise(resolve => {
+            dashboardDialogResolve = resolve;
+            window.requestAnimationFrame(() => $('#dashboard-dialog-confirm').trigger('focus'));
+        });
+    }
+
+    // Resolve and close the current in-page dialog, restoring keyboard focus
+    // to the control that opened it.
+    function closeDashboardDialog(confirmed) {
+        if (!dashboardDialogResolve) return;
+        const resolve = dashboardDialogResolve;
+        const previousFocus = dashboardDialogPreviousFocus;
+        dashboardDialogResolve = null;
+        dashboardDialogPreviousFocus = null;
+        $('#dashboard-dialog').addClass('hidden');
+        $('#dashboard-dialog-cancel').removeClass('hidden');
+        if ($('#result-table-modal').hasClass('hidden')) {
+            $('body').removeClass('result-modal-open');
+        }
+        resolve(Boolean(confirmed));
+        if (previousFocus && document.contains(previousFocus)) previousFocus.focus();
     }
 
     function populateObservationYearFilters() {
@@ -1024,24 +1124,36 @@ $(document).ready(function() {
 
     // The same-area action is meaningful only for two different explicit
     // years. Confirm them before starting the expensive second analysis.
-    function confirmSameAreaYearComparison() {
+    async function confirmSameAreaYearComparison() {
         const firstYear = $('#polygon-1-year').val();
         const secondYear = $('#polygon-2-year').val();
 
         if (!firstYear || !secondYear) {
-            alert('Select a specific data year for both Polygon 1 and Polygon 2 before comparing the same area.');
+            await showDashboardDialog({
+                title: 'Select data years',
+                message: 'Select a specific data year for both Polygon 1 and Polygon 2 before comparing the same area.',
+                confirmLabel: 'OK',
+                showCancel: false
+            });
             (!firstYear ? $('#polygon-1-year') : $('#polygon-2-year')).trigger('focus');
             return false;
         }
         if (firstYear === secondYear) {
-            alert('Select two different data years to compare change in the same area.');
+            await showDashboardDialog({
+                title: 'Choose different years',
+                message: 'Select two different data years to compare change in the same area.',
+                confirmLabel: 'OK',
+                showCancel: false
+            });
             $('#polygon-2-year').trigger('focus');
             return false;
         }
 
-        return window.confirm(
-            `Compare the same mapped area using Polygon 1: ${firstYear} and Polygon 2: ${secondYear}?`
-        );
+        return showDashboardDialog({
+            title: 'Compare the same area',
+            message: `Compare the same mapped area using Polygon 1: ${firstYear} and Polygon 2: ${secondYear}?`,
+            confirmLabel: 'Compare years'
+        });
     }
 
     // Reuse both existing geometries when only their observation-year filters
@@ -1056,9 +1168,11 @@ $(document).ready(function() {
 
         const firstYear = getPolygonYear(0) || 'All years';
         const secondYear = getPolygonYear(1) || 'All years';
-        const confirmed = window.confirm(
-            `Keep both polygon shapes in their current locations and recalculate using Polygon 1: ${firstYear} and Polygon 2: ${secondYear}?`
-        );
+        const confirmed = await showDashboardDialog({
+            title: 'Apply updated years',
+            message: `Keep both polygon shapes in their current locations and recalculate using Polygon 1: ${firstYear} and Polygon 2: ${secondYear}?`,
+            confirmLabel: 'Recalculate'
+        });
         if (!confirmed) return;
 
         comparisonActionLocked = true;
@@ -1095,7 +1209,7 @@ $(document).ready(function() {
     // intended for comparing the same area under two different year filters.
     async function reuseFirstPolygonInSameArea() {
         if (!isComparisonMode() || !polygonEntries[0] || comparisonActionLocked || polygonAnalysisRunning) return;
-        if (!confirmSameAreaYearComparison()) return;
+        if (!await confirmSameAreaYearComparison()) return;
         comparisonActionLocked = true;
         updatePolygonCopyButtons();
         cancelPolygonWorkerAnalysis();
@@ -1182,7 +1296,7 @@ $(document).ready(function() {
                 layer.redraw();
             };
 
-            const finishMove = () => {
+            const finishMove = async () => {
                 map.off('mousemove', handleMove);
                 L.DomEvent.off(document, 'mouseup', finishMove);
                 map.dragging.enable();
@@ -1196,9 +1310,11 @@ $(document).ready(function() {
                     return;
                 }
 
-                const locationConfirmed = window.confirm(
-                    'Use this location for Polygon 2 and calculate its biodiversity results? Select Cancel to return it to its previous position and move it again.'
-                );
+                const locationConfirmed = await showDashboardDialog({
+                    title: 'Confirm Polygon 2 location',
+                    message: 'Use this location for Polygon 2 and calculate its biodiversity results? Select Cancel to return it to its previous position and move it again.',
+                    confirmLabel: 'Use this location'
+                });
                 if (!locationConfirmed) {
                     layer.setLatLngs(originalLatLngs);
                     layer.redraw();
@@ -1348,13 +1464,27 @@ $(document).ready(function() {
         });
         $('#show-species-table').on('click', showSpeciesTable);
         $('#show-records-table').on('click', showRecordsTable);
+        $(document).on('click', '.show-lost-species', function() {
+            const resultCard = $(this).closest('[data-result-index]');
+            if (resultCard.length) selectComparisonResult(resultCard.data('result-index'));
+            showLostSpeciesTable();
+        });
         $('#download-comparison-results').on('click', downloadComparisonResults);
         $('#close-result-table').on('click', closeResultTable);
         $('#result-table-modal').on('click', event => {
             if (event.target.id === 'result-table-modal') closeResultTable();
         });
+        $('#dashboard-dialog-confirm').on('click', () => closeDashboardDialog(true));
+        $('#dashboard-dialog-cancel').on('click', () => closeDashboardDialog(false));
+        $('#dashboard-dialog').on('click', event => {
+            if (event.target.id === 'dashboard-dialog') closeDashboardDialog(false);
+        });
         $(document).on('keydown', event => {
             if (event.key === 'Escape') {
+                if (dashboardDialogResolve) {
+                    closeDashboardDialog(false);
+                    return;
+                }
                 closeResultTable();
                 closeMapLayerInformation();
             }
@@ -2367,8 +2497,12 @@ $(document).ready(function() {
     function buildRemovalSummary(summary) {
         const removal = summary.removal;
         if (!removal) return '';
+        const lostSpeciesCount = Number(removal.species_lost_from_dataset) || 0;
+        const lostSpeciesAction = lostSpeciesCount > 0
+            ? `<button type="button" class="secondary removal-species-action show-lost-species">View Lost Species (${lostSpeciesCount.toLocaleString()})</button>`
+            : '<p class="rank-help">No species would be removed completely from the selected dashboard dataset.</p>';
         return `<details class="rank-details removal-summary">
-            <summary><span>Removal analysis</span><span class="rank-summary">${removal.species_lost_from_dataset.toLocaleString()} species lost</span></summary>
+            <summary><span>Removal analysis</span><span class="rank-summary">${lostSpeciesCount.toLocaleString()} species lost</span></summary>
             <div class="rank-content">
                 <p class="rank-help">Models removal of the records inside this polygon from the ${escapeHtml(removal.year)} dashboard dataset. This is a data-removal scenario, not a prediction that every recorded species would physically disappear.</p>
                 <div class="removal-table-wrap">
@@ -2384,6 +2518,7 @@ $(document).ready(function() {
                         </tbody>
                     </table>
                 </div>
+                ${lostSpeciesAction}
             </div>
         </details>`;
     }
@@ -2675,6 +2810,35 @@ $(document).ready(function() {
         openResultTable('Species inside the polygon');
     }
 
+    // List species for which every record in the selected dashboard dataset
+    // lies inside the polygon and would therefore be removed in the scenario.
+    function showLostSpeciesTable() {
+        if (!activePolygonSummary?.removal) return;
+        const lostNames = activePolygonSummary.removal.species_lost_names || [];
+        const speciesByName = new Map(
+            activePolygonSummary.speciesRows.map(row => [row.species, row])
+        );
+        const thead = $('#result-table thead').empty();
+        const tbody = $('#result-table tbody').empty();
+        thead.append('<tr><th>English Name</th><th>Scientific Name</th><th>Taxa</th><th>Records Inside Polygon</th></tr>');
+
+        if (!lostNames.length) {
+            tbody.append('<tr><td colspan="4">No species would be removed completely from the selected dashboard dataset.</td></tr>');
+        } else {
+            lostNames.forEach(species => {
+                const row = speciesByName.get(species) || {
+                    englishName: '',
+                    species,
+                    taxa: '',
+                    records: 0
+                };
+                tbody.append(`<tr><td>${escapeHtml(row.englishName)}</td><td><em>${escapeHtml(row.species)}</em></td><td>${escapeHtml(row.taxa)}</td><td>${Number(row.records).toLocaleString()}</td></tr>`);
+            });
+        }
+
+        openResultTable(`Species lost from the dashboard dataset (${activePolygonSummary.removal.year})`);
+    }
+
     function showRecordsTable() {
         if (!activePolygonSummary) return;
         const thead = $('#result-table thead').empty();
@@ -2692,13 +2856,18 @@ $(document).ready(function() {
         openResultTable('All records inside the polygon');
     }
 
-    function downloadComparisonResults() {
+    async function downloadComparisonResults() {
         if (!activePolygonSummary) return;
 
         const comparison = activePolygonSummary.randomComparison || {};
         const results = comparison.results || [];
         if (!results.length) {
-            alert('No random comparison statistics are available to download.');
+            await showDashboardDialog({
+                title: 'No comparison data',
+                message: 'No random comparison statistics are available to download.',
+                confirmLabel: 'OK',
+                showCancel: false
+            });
             return;
         }
 

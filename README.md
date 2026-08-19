@@ -209,7 +209,9 @@ the same KPI function as the main dashboard. It compares the selected annual or
 all-years dataset before removal with the dataset remaining after records whose
 exact coordinates fall inside the polygon are excluded. This describes a data
 removal scenario and must not be presented as a prediction that development
-would physically remove every recorded species. The removal table reports the
+would physically remove every recorded species. The results include a table of
+species for which no records would remain in the selected dashboard dataset.
+The removal table reports the
 with-area value, without-area value, and change for observation records, unique
 species, Shannon diversity, and Gini-Simpson diversity.
 

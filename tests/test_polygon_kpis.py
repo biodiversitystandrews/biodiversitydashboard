@@ -44,6 +44,7 @@ class PolygonKpiTests(unittest.TestCase):
         self.assertEqual(result["inside_polygon"]["species_richness"], 1)
         self.assertEqual(result["remaining"]["species_richness"], 1)
         self.assertEqual(result["species_lost_from_dataset"], 1)
+        self.assertEqual(result["species_lost_names"], ["A"])
         self.assertEqual(
             set(result["change"]),
             {"total_records", "species_richness", "shannon", "simpson"},
