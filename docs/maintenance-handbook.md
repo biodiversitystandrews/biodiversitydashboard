@@ -1,16 +1,24 @@
 # Dashboard Maintenance Handbook
 
-## Who This Is For
+## About this guide
 
-This handbook is for future maintainers, including students who may be new to Python, JavaScript, GIS, GitHub Actions, or deployment. Start here before changing a converter or workflow. The README explains how to run the system; this document explains why the parts are arranged as they are and what can go wrong.
+This is the working guide for whoever maintains the dashboard next. It explains
+the choices behind the code and points out the parts most likely to cause
+problems. The README covers local setup.
 
-For first-time Google Cloud keys, GitHub secrets, Apps Script timers, manual workflow runs, and credential rotation, follow [`google-drive-workflows-setup.md`](google-drive-workflows-setup.md).
+Instructions for credentials and workflow setup are in
+[`google-drive-workflows-setup.md`](google-drive-workflows-setup.md).
 
-## System in One Paragraph
+## How an upload is processed
 
-Staff place source files in Google Drive. A time-triggered Google Apps Script sends the Drive file ID to GitHub using a `repository_dispatch` event. A matching GitHub Actions workflow downloads the file, runs one conversion script, and commits generated Parquet, GeoJSON, or JSON files. Render restarts the FastAPI service from `main.py`, while Netlify serves the static files under `frontend/`. The WordPress page embeds that frontend.
+Staff upload source files to Google Drive. Apps Script sends the file ID to the
+matching GitHub workflow. That workflow runs a converter and commits the new
+file under `data/`.
 
-## File and Workflow Ownership
+The production host then restarts the API in `main.py`. Netlify serves the
+frontend, which is embedded in WordPress.
+
+## Which file does what
 
 | Source or purpose | Conversion code | Workflow | Generated output |
 |---|---|---|---|
@@ -23,22 +31,28 @@ Staff place source files in Google Drive. A time-triggered Google Apps Script se
 | Habitat management, all years | `habitatmanagementgpkgconversion.py` | `update-management-geojson.yml` | `data/management_YYYY-YY.geojson` |
 | Camera traps | `cameratrapsgpkgconversion.py` | `update-cameratraps-geojson.yml` | `data/cameratraps_YYYY-YY.geojson` |
 | Habitat summary ZIP | `habitatsummaryprocessing.py` | `update-habitat-summary.yml` | `data/habitat_summary.json` |
-| Hotspot and estate layers | `hotspotprocessing.py` | `update-hotspots.yml` | Three generated GeoJSON files |
+| Hotspot and estate layers | `hotspotprocessing.py` | `update-hotspots.yml` | Hotspot and boundary GeoJSON files |
 | Shared observation rules | `dashboard_standardisation.py` | Imported by converters | No direct output |
 | Google Drive transfer | `download_from_gdrive.py` | Used by Drive workflows | Temporary workflow input |
-| Live API | `main.py` | Render deployment | JSON API responses |
+| Live API | `main.py` | Production API deployment | JSON API responses |
 | Main dashboard | `frontend/index.html` | Netlify deployment | Embedded dashboard page |
 | Polygon analysis | `frontend/polygon-analysis.html` and worker | Netlify deployment | Embedded analysis page |
 
-Both frontend pages read the backend address from `frontend/dashboard-config.js`. When Render is replaced, change the production URL there and update the API CORS origins in `main.py` or the `DASHBOARD_CORS_ORIGINS` environment variable.
+Both pages read the API address from `frontend/dashboard-config.js`. CORS is
+configured in `main.py` and can be extended with the
+`DASHBOARD_CORS_ORIGINS` environment variable. CORS entries are frontend
+addresses.
 
-Generated files under `data/` should not be manually edited. Correct the source or converter, rerun the relevant workflow, and let the workflow replace them.
+Do not edit generated files under `data/`. Fix the source or converter and run
+the workflow again.
 
-## Observation Data Contract
+## Observation data rules
 
-`dashboard_standardisation.py` is the authoritative contract for observation columns. Alternative headings are normalised and duplicate semantic columns are merged row by row. Add a new alternative name there instead of adding one-off renames to individual converters.
+`dashboard_standardisation.py` defines the observation columns. It also handles
+alternative headings and duplicate columns. Add new aliases there, not inside
+one converter.
 
-Important rules:
+Current rules:
 
 1. Split `year1`, `month`, and `day` fields take precedence over a combined date because they are not day/month ambiguous.
 2. UK-style date text is parsed day-first; ISO year-first text remains year-first.
@@ -48,23 +62,38 @@ Important rules:
 6. Non-point observation geometry is not silently converted to a centroid.
 7. Text tokens such as `NULL`, `N/A`, and `None` become genuine missing values.
 
-When changing these rules, run the standardisation tests and inspect a representative output in QGIS.
+After changing a rule, run the standardisation tests and inspect one output in
+QGIS.
 
-## Habitat, Management, and Camera Years
+## Habitat, management and camera years
 
-The source habitat and management files may contain several sampling years. Their converters validate the year field and write one annual GeoJSON per year. Camera-trap records may already contain a sampling-year label; otherwise the converter derives May-April sampling year from calendar year and deployment month.
+Habitat and management files may contain several sampling years. Their
+converters write one GeoJSON file per year. Camera-trap data uses its existing
+sampling-year label where available. Otherwise, the converter derives the year
+from the calendar year and deployment month.
 
-Each of these workflows treats its upload as the current master dataset. It removes previously generated annual files only inside the temporary workflow checkout, runs the converter, and commits the replacement set only if conversion succeeds. A failed conversion therefore cannot delete production files.
+Each upload replaces the previous annual set for that source. Old generated
+files are removed only in the workflow's temporary checkout. Nothing is
+committed unless conversion succeeds, so a failed run does not delete the live
+files.
 
 ## Biomscore
 
-Biomscore is the arithmetic mean of valid scores from 0 to 3 for each habitat and year. The parser accepts numeric values and labels beginning with a score, such as `3 - High`. Missing or invalid values are excluded from the mean and must not be converted to zero.
+Biomscore is the mean score for each habitat and year. Valid values run from 0
+to 3. The input may be numeric or a label such as `3 - High`. Missing values do
+not count as zero.
 
-Habitat area is always calculated after projecting polygons to British National Grid (`EPSG:27700`). Never calculate area directly from `EPSG:4326`: its coordinates are degrees, not metres, and the resulting hectare values can round to zero. Processing deliberately fails if CRS metadata is missing, coordinates are inconsistent with a geographic CRS, or an annual area total is zero. It also reports repaired invalid polygons and zero-area features in the workflow log.
+Area is calculated in British National Grid (`EPSG:27700`). Do not calculate
+area in `EPSG:4326`, because its coordinates are degrees rather than metres.
 
-If habitat-summary processing needs to be repeated, open **Actions > Update Habitat Summary JSON from Google Drive > Run workflow** and enter the ZIP file's Google Drive file ID. The normal Google Drive upload trigger continues to work automatically.
+Processing stops if the CRS is missing or clearly wrong. It also stops when a
+year has no usable area. Geometry repairs and zero-area features appear in the
+workflow log.
 
-## Preparing Habitat Summary Data
+To repeat habitat-summary processing, open **Actions > Update Habitat Summary
+JSON from Google Drive > Run workflow** and enter the ZIP file's Drive file ID.
+
+## Preparing habitat summary data
 
 The habitat-summary workflow expects a ZIP archive containing these exact files:
 
@@ -73,9 +102,14 @@ Habitat_Polygons University all years.gpkg
 10m square habitats.gpkg
 ```
 
-The `10m square habitats.gpkg` file is prepared manually in QGIS. For every sampling year, intersect the University's 10-metre square grid with that year's habitat polygons. The intersection should produce separate polygon features for each habitat occurring within each grid square. These features allow the summary processor to count how many distinct 10-metre squares contain each habitat; the all-years habitat file alone cannot provide those square counts.
+Prepare `10m square habitats.gpkg` in QGIS. Intersect the University 10-metre
+grid with the habitat polygons for each year. The result needs one feature for
+each habitat found in a square. The summary uses these features to count
+occupied squares; it cannot calculate that count from the all-years file alone.
 
-Manual GIS preparation and visual review are intentional parts of the method. Student-drawn habitat polygons may contain geometry mistakes that are easier to identify on a map than to repair safely in code. Before creating and uploading the ZIP, check in QGIS that:
+This step stays manual because drawing errors are easier to spot on a map than
+to repair safely in code. Before uploading the ZIP, check the following in
+QGIS:
 
 1. Both required files are present and use the exact filenames above.
 2. Every expected sampling year is present in both files.
@@ -85,53 +119,77 @@ Manual GIS preparation and visual review are intentional parts of the method. St
 6. Biomscore values are either numeric scores from 0 to 3 or labels beginning with one of those scores.
 7. The 10-metre intersection contains records for every year that should show non-zero **No. 10m Squares** and **Squares (%)** values.
 
-The automated processor then calculates habitat area and area percentage, average Biomscore, the number of occupied 10-metre squares, and the percentage of occupied squares for each habitat and year. It validates the prepared input and should stop with a clear error when required annual data, usable geometry, or valid area is missing instead of publishing misleading zero values.
+The processor calculates the table from the checked inputs. It stops rather
+than publishing zeros when a year, usable geometry or valid area is missing.
 
-Automated validation is a final safety check, not a replacement for viewing the source and intersection layers in QGIS. Defensive geometry handling may prevent a processing crash, but it must not be treated as confirmation that an ecological boundary is correct. Correct source mapping errors in QGIS, recreate the intersection, and rerun the workflow.
+Automated validation does not replace the QGIS review. Geometry repair may
+prevent a crash, but it cannot tell whether an ecological boundary was drawn in
+the right place. Correct mapping errors in QGIS and recreate the intersection.
 
-## API Data Loading
+## How the API loads data
 
-`main.py` loads every `data/*.parquet` file in alphabetical order and records the source filename. It validates required columns, preserves any source ID as `source_record_id`, then assigns one globally unique dashboard `id`. The combined DataFrame and large polygon payload are cached until the API process restarts.
+`main.py` loads every `data/*.parquet` file in alphabetical order. It keeps the
+source filename and preserves an input ID as `source_record_id`. Each combined
+row then receives a dashboard `id`. The data stays cached until the API
+restarts.
 
-Adding a Parquet file therefore adds its rows to all dashboard totals. Before adding one, confirm that it does not overlap an existing dataset. The API deliberately does not delete apparent duplicates because repeated observations may be legitimate.
+Every added Parquet contributes to the dashboard totals. Check that it does not
+overlap an existing dataset. The API does not remove similar rows because some
+repeated observations are legitimate.
 
-## Known Risks and Recovery
+## Things likely to go wrong
 
 ### Google Apps Script archives too early
 
-The current external Apps Script moves an upload to the Processed folder immediately after GitHub accepts the dispatch request, not after the workflow succeeds. If a workflow fails, retrieve that file from Processed, fix the cause, and upload it again. A future improvement would delay archiving until GitHub reports success.
+Apps Script moves an upload to Processed as soon as GitHub accepts the request.
+It does not wait for the workflow to finish. If processing fails, retrieve the
+file from Processed and upload it again after fixing the cause.
 
 ### Multi-layer observation GeoPackages
 
-Several historical observation converters select the populated layer with the most features. This works for current files but may choose the wrong layer if a future package contains a larger non-observation layer. Inspect workflow logs, and prefer an explicit layer or required-column scoring if this input format changes.
+Some historical converters choose the populated layer with the most features.
+That may be wrong if a package contains a larger unrelated layer. Check the
+workflow log when the selected layer looks suspicious.
 
 ### Dataset overlap
 
-All Parquets are concatenated. Similar-looking rows within a source are not automatically duplicates. Define an agreed observation identity and source ownership policy with the data owner before implementing deduplication.
+All Parquets are concatenated. Similar rows are not automatically duplicates.
+Agree what counts as one observation with the data owner before adding
+deduplication.
 
 ### External taxonomy services
 
-English-name fallback calls ITIS, NCBI, and GBIF. Network outages make these lookups slow or incomplete, although cached and master-list names still work. Do not make API lookup success a requirement for retaining an otherwise valid observation.
+English-name fallback uses ITIS, NCBI and GBIF. An outage can make those lookups
+slow or incomplete. Cached names and the master list still work, so a failed
+lookup should not remove an otherwise valid observation.
 
 ### Invalid GIS geometry
 
-Habitat conversion repairs invalid polygonal geometry where possible. Review warnings in Actions logs; repeated repairs usually indicate that the source should also be corrected in GIS.
+Habitat conversion repairs invalid polygons where possible. Repeated repair
+warnings usually mean the source also needs correcting in GIS.
 
 ### Dependency changes
 
-`requirements.txt` uses supported version ranges. Dependabot or a maintainer should review these ranges periodically. Update one dependency family at a time, run tests, then process representative data before deployment.
+`requirements.txt` uses version ranges. Review them periodically. Change one
+dependency family at a time and test it with representative data.
 
 ### Memory growth
 
-The API holds all Parquet records in memory. Monitor memory as files grow. Move filtering to a database or query engine before the combined dataset no longer fits comfortably in the server allocation.
+The API keeps all Parquet records in memory. Watch memory use as the files grow.
+Move filtering to a database or query engine before the combined data becomes
+too large for the server.
 
-## Workflow Safety
+## Workflow safeguards
 
-All workflows that commit generated data share one GitHub concurrency group. This serialises pushes and avoids two uploads racing to update `main`. Jobs also have a 45-minute timeout. A workflow rebases its generated commit onto the latest branch before pushing; a genuine same-file conflict still stops safely for manual review.
+Workflows that commit data share one concurrency group, so only one can push at
+a time. Jobs stop after 45 minutes. Before pushing, a workflow rebases its
+generated commit onto the latest `main`. A real same-file conflict still needs
+manual review.
 
-Never use force-push in a data workflow. Never commit credentials. The Drive service-account JSON belongs only in the `GDRIVE_CREDENTIALS_DATA` repository secret.
+Do not force-push from a data workflow. Keep the Drive service-account JSON only
+in the `GDRIVE_CREDENTIALS_DATA` repository secret.
 
-## Safe Change Procedure
+## Making a change
 
 1. Pull the latest `main` branch and confirm `git status` is clean.
 2. Identify the owning converter and workflow using the table above.
@@ -144,15 +202,17 @@ Never use force-push in a data workflow. Never commit credentials. The Drive ser
 9. Commit code separately from generated test output.
 10. Watch the GitHub Actions run and deployed `/health` endpoint after pushing.
 
-## Commenting Style
+## Comments
 
-Comments should explain intent, precedence, assumptions, or a surprising constraint. Avoid comments that merely restate a line of code. Public helpers should have short docstrings describing inputs, output, and important failure behaviour. If a rule comes from a data-owner decision, record that decision here as well as near the implementation.
+Use comments for decisions or constraints that are not obvious from the code.
+Do not narrate simple assignments. Public helpers should have short docstrings.
+Record data-owner decisions here and beside the relevant implementation.
 
-## Before Handing Over
+## Handover
 
 - Confirm the biodiversity GitHub and Google accounts can be accessed by the responsible team.
 - Confirm repository secrets and Apps Script properties exist without exposing their values.
-- Confirm Render or its University replacement, Netlify, and WordPress ownership.
+- Confirm ownership of the production API, Netlify site, and WordPress page.
 - Provide the current Drive folder IDs and Apps Script project links through an approved private channel.
 - Demonstrate one successful upload and one failed-workflow recovery.
 - Review open risks and any deliberately retained legacy scripts with the next maintainer.

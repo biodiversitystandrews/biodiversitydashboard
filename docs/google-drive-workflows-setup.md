@@ -1,11 +1,9 @@
 # Google Drive and GitHub Workflow Setup
 
-## Purpose
+## About this guide
 
-This guide explains how Google Drive uploads reach the dashboard, how to create
-and rotate the required credentials, and how to run or recover every workflow.
-It is written for maintainers who have not configured Google Cloud, Apps Script,
-or GitHub Actions before.
+Use this guide when setting up or repairing the Google Drive workflows. It
+assumes no previous knowledge of the project's Google Cloud configuration.
 
 Never put a private key, GitHub token, or credentials JSON file in the
 repository. Screenshots and handover documents must not reveal secret values.
@@ -19,7 +17,7 @@ repository. Screenshots and handover documents must not reveal secret values.
 5. `download_from_gdrive.py` downloads the source file by ID.
 6. A converter creates a Parquet, GeoJSON, or JSON file under `data/`.
 7. GitHub Actions commits the generated file.
-8. Render redeploys the API and Netlify serves the frontend.
+8. The production host redeploys the API and Netlify serves the frontend.
 
 There are two separate credentials:
 
@@ -54,12 +52,15 @@ Habitat_Polygons University all years.gpkg
 10m square habitats.gpkg
 ```
 
-Prepare the 10-metre-square file by intersecting each year's habitat polygons with the University 10-metre grid in QGIS, then visually check the result before uploading it. The complete preparation and quality-control procedure is in [`maintenance-handbook.md`](maintenance-handbook.md#preparing-habitat-summary-data).
+Prepare the 10-metre-square file by intersecting each year's habitat polygons
+with the University 10-metre grid in QGIS. Check the result on the map before
+uploading it. The full procedure is in
+[`maintenance-handbook.md`](maintenance-handbook.md#preparing-habitat-summary-data).
 
 Hotspots normally run after successful observation or habitat workflows. They
 can also be run manually and do not need a Google Drive file ID.
 
-## Information to Record Privately
+## Keep these details somewhere private
 
 Keep the following operational details in an approved University password
 manager or restricted handover record, not in GitHub:
@@ -70,13 +71,13 @@ manager or restricted handover record, not in GitHub:
 - Input and Processed folder IDs for every source type.
 - GitHub token owner, expiry date, and repository restriction.
 - GitHub repository owner/name.
-- Render and Netlify project owners.
+- Production API and Netlify project owners.
 
 A Google Drive folder URL normally ends in `/folders/FOLDER_ID`. A file URL
 normally contains `/d/FILE_ID/`. Copy only that ID when configuring a script or
 manually running a workflow.
 
-## Part 1: Create the Google Service Account
+## Create the Google service account
 
 Skip creation if the team already has a maintained service account such as a
 GitHub Actions Drive reader. Reuse it and rotate its key when necessary.
@@ -110,7 +111,7 @@ token_uri
 If the JSON instead has an `installed` or `web` section, it is an OAuth client
 file and is the wrong credential type.
 
-## Part 2: Share the Drive Inputs
+## Share the Drive inputs
 
 1. Open the service-account JSON and copy its `client_email`. It ends with
    `.iam.gserviceaccount.com` and is not the ordinary biodiversity Google email.
@@ -123,7 +124,7 @@ file and is the wrong credential type.
 The workflow only reads uploaded files, so do not grant the service account
 Editor access unless a future workflow genuinely requires writes to Drive.
 
-## Part 3: Add the Google JSON to GitHub
+## Add the Google JSON to GitHub
 
 1. Open the dashboard repository on GitHub.
 2. Go to **Settings > Secrets and variables > Actions**.
@@ -143,7 +144,7 @@ Do not add `gdrive-credentials.json`, `credentials.json`, or the downloaded key
 to Git. If a key is ever committed, delete/disable it in Google Cloud immediately,
 remove it from the repository history as required, and generate a replacement.
 
-## Part 4: Create the GitHub Dispatch Token
+## Create the GitHub dispatch token
 
 Apps Script needs a credential capable of calling:
 
@@ -151,7 +152,7 @@ Apps Script needs a credential capable of calling:
 POST /repos/OWNER/REPOSITORY/dispatches
 ```
 
-For the straightforward setup used here:
+The current setup uses a fine-grained personal access token:
 
 1. Sign in to GitHub using the team-owned biodiversity account.
 2. Create a **fine-grained personal access token**.
@@ -163,11 +164,10 @@ For the straightforward setup used here:
    organization approval step.
 7. Copy the token immediately and store it securely.
 
-A GitHub App is preferable for a long-term institutional setup because it is not
-tied to one user and can use short-lived credentials. The fine-grained token is
-retained here because it matches the existing Apps Script design.
+A GitHub App would avoid tying this access to one user, but the existing Apps
+Script expects a fine-grained token.
 
-## Part 5: Configure Apps Script
+## Configure Apps Script
 
 Each monitored Drive input normally has a script with four source-specific
 settings:
@@ -227,7 +227,7 @@ Store the token without putting it in source code:
 4. Run `processNewFiles` once from the editor and approve the requested Drive
    and external-request permissions.
 
-## Part 6: Install the Apps Script Timer
+## Install the Apps Script timer
 
 1. In Apps Script, select **Triggers** (the clock/alarm icon).
 2. Select **Add Trigger**.
@@ -240,7 +240,7 @@ Store the token without putting it in source code:
 Installable triggers always run as the account that created them. Copying a
 script project does not transfer that person's trigger automatically.
 
-## Part 7: Test the Automatic Path
+## Test an automatic upload
 
 Test one source at a time:
 
@@ -251,7 +251,7 @@ Test one source at a time:
 5. Open the run and inspect each step, especially download, conversion, tests,
    and commit/push.
 6. Confirm the expected file under `data/` changed.
-7. Confirm Render redeployed and `/health` responds.
+7. Confirm the production API redeployed and `/health` responds.
 8. Confirm the public dashboard displays the expected year/count/summary.
 
 Apps Script currently moves a file to Processed once GitHub accepts the event,
@@ -261,7 +261,7 @@ changes or credential rotation.
 
 ## Manually Run a Drive Workflow
 
-Every Drive workflow supports manual recovery after this documentation update:
+Drive workflows can also be started manually:
 
 1. Open **GitHub > Actions**.
 2. Select the workflow by name.
@@ -276,7 +276,7 @@ For **Update Biodiversity Hotspot Layers**, select **Run workflow** without a
 file ID. Hotspots should normally be run last because they use the current
 Parquet and habitat outputs.
 
-## Rebuild Everything After Migration or Disaster Recovery
+## Rebuild all generated data
 
 Do not routinely run every workflow. For a full rebuild, use this order and
 wait for each workflow to finish because generated-data writes are serialized:
@@ -344,13 +344,13 @@ valid for `service_account.Credentials.from_service_account_file`.
 ### Workflow succeeds but the website does not change
 
 - Confirm a generated file was committed; a run may report “No changes”.
-- Confirm Render deployed the new commit and restarted the API cache.
+- Confirm the production API deployed the new commit and restarted its data cache.
 - Confirm Netlify points at the correct repository/branch and frontend directory.
 - Inspect the API response directly before blaming the table or map display.
 - For habitat summaries, confirm `data/habitat_summary.json` contains
   `"schema_version": 2`; otherwise it is a stale legacy artifact.
 
-## Official References
+## Reference links
 
 - Google Cloud: create/delete service-account keys:
   <https://docs.cloud.google.com/iam/docs/keys-create-delete>
