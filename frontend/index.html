@@ -1443,7 +1443,8 @@ $(document).ready(function() {
 
         const primaryRequests = [
             loadTable(filters, 1),
-            updateSummaryStats(filters)
+            updateSummaryStats(filters),
+            loadUniqueSpeciesTable(1)
         ];
         if (refreshMap) primaryRequests.push(updateMap(filters));
         const primaryResult = $.when(...primaryRequests)
@@ -1964,7 +1965,8 @@ $(document).ready(function() {
     function loadUniqueSpeciesTable(page = 1) {
         const card = $('#unique-species-table').closest('.card');
         card.append('<div class="loading-overlay"><span>Loading...</span></div>');
-        return $.get(`${API_BASE_URL}/api/all_unique_species`, { page: page, page_size: 10 }).done(data => {
+        const requestParams = { ...getActiveFilters(), page: page, page_size: 10 };
+        return $.get(`${API_BASE_URL}/api/all_unique_species`, requestParams).done(data => {
             const tableBody = $('#unique-species-table tbody').empty();
             if (!data.species_list || data.species_list.length === 0) {
                 tableBody.append('<tr><td style="text-align:center; padding: 2em;">No species found.</td></tr>');

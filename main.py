@@ -480,10 +480,29 @@ def get_hotspots(metric: str):
     )
 
 @app.get("/api/all_unique_species")
-def get_all_unique_species(page: int = 1, page_size: int = 10):
-    """Return an alphabetic, paginated list of distinct scientific names."""
-    df = get_dataframe()
-    all_unique_species = sorted(df['species'].dropna().unique().tolist())
+def get_all_unique_species(
+    page: int = 1,
+    page_size: int = 10,
+    english_name: Optional[str] = None,
+    species: Optional[str] = None,
+    obs: Optional[str] = None,
+    taxa: Optional[str] = None,
+    year: Optional[str] = None,
+    month: Optional[int] = None,
+    bbox: Optional[str] = None,
+):
+    """Return distinct scientific names from the currently filtered records."""
+    filtered_df = apply_filters(
+        get_dataframe(),
+        english_name=english_name,
+        species=species,
+        obs=obs,
+        taxa=taxa,
+        year=year,
+        month=month,
+        bbox=bbox,
+    )
+    all_unique_species = sorted(filtered_df["species"].dropna().unique().tolist())
     total_species = len(all_unique_species)
     start_index = (page - 1) * page_size
     end_index = start_index + page_size
