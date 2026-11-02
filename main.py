@@ -757,7 +757,10 @@ def get_species_distribution(
     query_df = apply_filters(df, english_name, species, obs, taxa, year, month, bbox)
     if query_df.empty:
         return []
+    # Categorical columns retain unused labels after filtering. Exclude their
+    # zero counts so unrelated species cannot fill spare places in the top 20.
     species_counts = query_df['english_name'].value_counts()
+    species_counts = species_counts[species_counts > 0]
     top_20_names = species_counts.nlargest(20).index.tolist()
     top_20_df = query_df[query_df['english_name'].isin(top_20_names)]
     taxa_map = top_20_df.groupby('english_name', observed=True)['taxa'].first()
